@@ -47,6 +47,8 @@ label var lnfrm "Farm size (log)"
 recode year (2015=1)(nonm=0), gen(year2015)
 label var year2015 "Year 2015"
 
+recode disemp (1=0 "No")(0=1 "Yes"), gen(emp)
+label var emp "Empowerment status"
 recode dvcode (10 50 55=1)(nonm=0), gen(pov_div) //division dummy
 *division
 recode dvcode (10=1 "Barisal" )(20=2 "Chattogram") (30=3 "Dhaka") (40=4 "Khulna") (50=5 "Rajshahi") (55=6 "Rangpur") (60=7 "Sylhet"), gen(division)
@@ -161,31 +163,68 @@ save panel.dta, replace
 graph bar wm, over(year) ytitle("Women's Mobile phone ownership")  note("Source: Bangladesh Integrated Household Survey 2011, 2015 and 2019") scheme(s1mono)
 graph export $graph/phone_overtime.jpg, replace
 
-graph bar disemp, over(year) ytitle("Women's disempowerment status")  note("Source: Bangladesh Integrated Household Survey 2011, 2015 and 2019") scheme(s1mono)
+graph bar emp, over(year) ytitle("Women's disempowerment status")  note("Source: Bangladesh Integrated Household Survey 2011, 2015 and 2019") scheme(s1mono)
 
+graph bar brth_cntrl, over(year) ytitle("Birth control")  note("Source: Bangladesh Integrated Household Survey 2011, 2015 and 2019") scheme(s1mono)
 
-*the effect of women's mobile phone ownership on women empowerment
+graph bar vlnc, over(year) ytitle("Any violence")  note("Source: Bangladesh Integrated Household Survey 2011, 2015 and 2019") scheme(s1mono)
+
+*the association between women's mobile phone ownership on women empowerment
 use panel, clear
 
-global control schll_hh edu_w age_hh age_w lit_w hh_size market asset
+global control age_w c.age_w#c.age_w schll_w wrk_wf masst w_crdt ch_size age_hh schll_hh wrk_hs farmsize asset //covariates
 eststo clear
 
-foreach out of varlist FiveDE disemp{
+foreach out of varlist FiveDE emp{
+ 	eststo: reghdfe `out' wm $control, a(a01 dcode year) vce(r)
+}
+
+foreach out of varlist brth_cntrl vlnc em_vlnc py_vlnc{
  	eststo: reghdfe `out' wm $control, a(a01 dcode year) vce(r)
 }
 
 ** IV-FE
-foreach out of varlist FiveDE disemp{
+foreach out of varlist FiveDE emp{
  	eststo: ivreghdfe `out' $control (wm = wm_union), a(a01 dcode year) robust
 }
+
+foreach out of varlist brth_cntrl vlnc em_vlnc py_vlnc{
+ 	eststo: ivreghdfe `out' $control (wm = wm_union), a(a01 dcode year) robust
+}
+
 esttab using $table\main_result.rtf, b(%4.3f) se replace nogaps starlevels(* 0.1 ** 0.05 *** 0.01) label nocons
 
 **Heterogeneous analysis
-esttab using $table\did2.rtf, order(mm_o  did_o rshock_k did_s shock) keep(mm_o rshock_k shock did_o did_s) b(%4.3f) se replace nogaps starlevels(* 0.1 ** 0.05 *** 0.01) label nocons s(hh division control N, label("Household FE" "Division FE" "Year FE" "Control variables" "Observations"))
+eststo clear
+** with women's credit access
+foreach out of varlist FiveDE emp{
+ 	eststo: reghdfe `out' i.wm#i.w_crdt $control, a(a01 dcode year) vce(r)
+}
+
+foreach out of varlist brth_cntrl vlnc em_vlnc py_vlnc{
+ 	eststo: reghdfe `out' i.wm#i.w_crdt $control, a(a01 dcode year) vce(r)
+}
+** with age of women
+gen wm_age=wm*age_w
+foreach out of varlist FiveDE emp{
+ 	eststo: reghdfe `out' wm wm_age $control, a(a01 dcode year) vce(r)
+}
+
+foreach out of varlist brth_cntrl vlnc em_vlnc py_vlnc{
+ 	eststo: reghdfe `out' wm wm_age $control, a(a01 dcode year) vce(r)
+}
+** with education level of women
+gen wm_ed=wm*schll_w
+foreach out of varlist FiveDE emp{
+ 	eststo: reghdfe `out' wm wm_ed $control, a(a01 dcode year) vce(r)
+}
+
+foreach out of varlist brth_cntrl vlnc em_vlnc py_vlnc{
+ 	eststo: reghdfe `out' wm wm_ed $control, a(a01 dcode year) vce(r)
+}
+esttab using $table\hetero.rtf, b(%4.3f) se replace nogaps starlevels(* 0.1 ** 0.05 *** 0.01) label nocons 
 
 
 ** falsification test
-eststo clear
-eststo: reghdfe lnfexp mobile_union $control if mm_o==0, a(a01 dvcode year)  vce(robust)
-eststo: reghdfe lnnexp mobile_union $control if mm_o==0, a(a01 dvcode year)  vce(robust)
+
 esttab using $table\falsification.rtf, keep(mobile_union) b(%4.3f) se replace nogaps starlevels(* 0.1 ** 0.05 *** 0.01) label nocons s(hh division control N, label("Household FE" "Division Year" "Control variables" "Observations"))
