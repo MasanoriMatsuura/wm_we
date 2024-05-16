@@ -169,61 +169,135 @@ graph bar brth_cntrl, over(year) ytitle("Birth control")  note("Source: Banglade
 
 graph bar vlnc, over(year) ytitle("Any violence")  note("Source: Bangladesh Integrated Household Survey 2011, 2015 and 2019") scheme(s1mono)
 
-*the association between women's mobile phone ownership on women empowerment
+*the association between women's mobile phone ownership and women empowerment
 use panel, clear
 
 global control age_w c.age_w#c.age_w schll_w wrk_wf masst w_crdt ch_size age_hh schll_hh wrk_hs farmsize asset //covariates
 eststo clear
-
+** Panel FE
 foreach out of varlist FiveDE emp{
  	eststo: reghdfe `out' wm $control, a(a01 dcode year) vce(r)
 }
+** IV-FE
+foreach out of varlist FiveDE emp{
+ 	eststo: ivreghdfe `out' $control (wm = wm_union), a(a01 dcode year) robust
+}
+esttab using $table\main_result_we.rtf, b(%4.3f) se replace nogaps starlevels(* 0.1 ** 0.05 *** 0.01) label nocons
 
+*the association between women's mobile phone ownership and women empowerment
+eststo clear
+
+** Panel FE
 foreach out of varlist brth_cntrl vlnc em_vlnc py_vlnc{
  	eststo: reghdfe `out' wm $control, a(a01 dcode year) vce(r)
 }
 
 ** IV-FE
-foreach out of varlist FiveDE emp{
- 	eststo: ivreghdfe `out' $control (wm = wm_union), a(a01 dcode year) robust
-}
-
 foreach out of varlist brth_cntrl vlnc em_vlnc py_vlnc{
  	eststo: ivreghdfe `out' $control (wm = wm_union), a(a01 dcode year) robust
 }
 
-esttab using $table\main_result.rtf, b(%4.3f) se replace nogaps starlevels(* 0.1 ** 0.05 *** 0.01) label nocons
+esttab using $table\main_result_vlbc.rtf, b(%4.3f) se replace nogaps starlevels(* 0.1 ** 0.05 *** 0.01) label nocons
 
-**Heterogeneous analysis
-eststo clear
+** Heterogeneous analysis (IV-FE)
 ** with women's credit access
+eststo clear
+gen wm_cr=wm*w_crdt
+gen wu_cr=wm_union*w_crdt
+label var wm "WMP"
+label var wm_cr "WMP # Credit access"
 foreach out of varlist FiveDE emp{
- 	eststo: reghdfe `out' i.wm#i.w_crdt $control, a(a01 dcode year) vce(r)
-}
+ 	reghdfe wm wm_union $control, a(a01 dcode year) vce(r) res
+	predict double res1_`out', r
+
+	reghdfe wm_cr wu_cr $control, a(a01 dcode year) vce(r) res
+	predict double res2_`out', r
+
+ 	eststo: reghdfe `out' wm wm_cr $control res1_`out' res2_`out', a(a01 dcode year) vce(r)
+	estimates store `out'
+ }
+
 
 foreach out of varlist brth_cntrl vlnc em_vlnc py_vlnc{
- 	eststo: reghdfe `out' i.wm#i.w_crdt $control, a(a01 dcode year) vce(r)
+ 	reghdfe wm wm_union $control, a(a01 dcode year) vce(r) res
+	predict double res1_`out', r
+
+	reghdfe wm_cr wu_cr $control, a(a01 dcode year) vce(r) res
+	predict double res2_`out', r
+
+ 	eststo: reghdfe `out' wm wm_cr $control res1_`out' res2_`out', a(a01 dcode year) vce(r)
+	estimates store `out'
 }
+coefplot (FiveDE, label(5DE score)) (emp, label(Empowerment)) (brth_cntrl, label(Contraception)) (vlnc, label(Any violence)) (em_vlnc, label(Emotional violence)) (py_vlnc, label(Physical violence)) , keep(wm wm_cr) xline(0)
+graph export $graph\we_cr.png, replace
+
+esttab using $table\hetero_crd.rtf, b(%4.3f) se replace nogaps starlevels(* 0.1 ** 0.05 *** 0.01) label nocons 
+drop res1_FiveDE res2_FiveDE res1_emp res2_emp res1_brth_cntrl res2_brth_cntrl res1_vlnc res2_vlnc res1_em_vlnc res2_em_vlnc res1_py_vlnc res2_py_vlnc
+
 ** with age of women
+eststo clear
 gen wm_age=wm*age_w
+gen wu_age=wm_union*age_w
+label var wm_age "WMP # Age of women"
+
 foreach out of varlist FiveDE emp{
- 	eststo: reghdfe `out' wm wm_age $control, a(a01 dcode year) vce(r)
+ 	reghdfe wm wm_union $control, a(a01 dcode year) vce(r) res
+	predict double res1_`out', r
+
+	reghdfe wm_age wu_age $control, a(a01 dcode year) vce(r) res
+	predict double res2_`out', r
+
+ 	eststo: reghdfe `out' wm wm_age $control res1_`out' res2_`out', a(a01 dcode year) vce(r)
+ 	estimates store `out'
 }
 
 foreach out of varlist brth_cntrl vlnc em_vlnc py_vlnc{
- 	eststo: reghdfe `out' wm wm_age $control, a(a01 dcode year) vce(r)
+ 	reghdfe wm wm_union $control, a(a01 dcode year) vce(r) res
+	predict double res1_`out', r
+
+	reghdfe wm_age wu_age $control, a(a01 dcode year) vce(r) res
+	predict double res2_`out', r
+
+ 	eststo: reghdfe `out' wm wm_age $control res1_`out' res2_`out', a(a01 dcode year) vce(r)
+	estimates store `out'
 }
+coefplot (FiveDE, label(5DE score)) (emp, label(Empowerment)) (brth_cntrl, label(Contraception)) (vlnc, label(Any violence)) (em_vlnc, label(Emotional violence)) (py_vlnc, label(Physical violence)) , keep(wm wm_age) xline(0)
+graph export $graph\we_age.png, replace
+
+esttab using $table\hetero_age.rtf, b(%4.3f) se replace nogaps starlevels(* 0.1 ** 0.05 *** 0.01) label nocons 
+drop res1_FiveDE res2_FiveDE res1_emp res2_emp res1_brth_cntrl res2_brth_cntrl res1_vlnc res2_vlnc res1_em_vlnc res2_em_vlnc res1_py_vlnc res2_py_vlnc
 ** with education level of women
+eststo clear
 gen wm_ed=wm*schll_w
+gen wu_ed=wm_union*schll_w
+label var wm_ed "WMP # Education level of women"
+
 foreach out of varlist FiveDE emp{
- 	eststo: reghdfe `out' wm wm_ed $control, a(a01 dcode year) vce(r)
+ 	reghdfe wm wm_union $control, a(a01 dcode year) vce(r) res
+	predict double res1_`out', r
+
+	reghdfe wm_ed wu_ed $control, a(a01 dcode year) vce(r) res
+	predict double res2_`out', r
+
+ 	eststo: reghdfe `out' wm wm_ed $control res1_`out' res2_`out', a(a01 dcode year) vce(r)
+ 	estimates store `out'
 }
 
 foreach out of varlist brth_cntrl vlnc em_vlnc py_vlnc{
- 	eststo: reghdfe `out' wm wm_ed $control, a(a01 dcode year) vce(r)
-}
-esttab using $table\hetero.rtf, b(%4.3f) se replace nogaps starlevels(* 0.1 ** 0.05 *** 0.01) label nocons 
+ 	reghdfe wm wm_union $control, a(a01 dcode year) vce(r) res
+	predict double res1_`out', r
 
+	reghdfe wm_ed wu_ed $control, a(a01 dcode year) vce(r) res
+	predict double res2_`out', r
+
+ 	eststo: reghdfe `out' wm wm_ed $control res1_`out' res2_`out', a(a01 dcode year) vce(r)
+	estimates store `out'
+}
+coefplot (FiveDE, label(5DE score)) (emp, label(Empowerment)) (brth_cntrl, label(Contraception)) (vlnc, label(Any violence)) (em_vlnc, label(Emotional violence)) (py_vlnc, label(Physical violence)) , keep(wm wm_ed) xline(0)
+graph export $graph\we_ed.png, replace
+
+esttab using $table\hetero_edu.rtf, b(%4.3f) se replace nogaps starlevels(* 0.1 ** 0.05 *** 0.01) label nocons 
+drop res1_FiveDE res2_FiveDE res1_emp res2_emp res1_brth_cntrl res2_brth_cntrl res1_vlnc res2_vlnc res1_em_vlnc res2_em_vlnc res1_py_vlnc res2_py_vlnc
 
 ** falsification test
 
