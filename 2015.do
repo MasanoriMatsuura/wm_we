@@ -47,11 +47,8 @@ label var age_w "Age of women"
 label var schll_w "Schooling year of women"
 recode b1_07 (4=1 "yes") (nonm=0 "No" ), gen(lit_w)
 label var lit_w "Literacy of women"
-recode b1_10 (1=72 "Yes")(nonm=0 "No"), gen(wrk_wf)
-label var wrk_wf "Current working status of wife"
 
-keep a01 couple ch_size edu_w schll_w lit_w age_w wrk_wf
-
+keep a01 couple ch_size edu_w schll_w lit_w age_w 
 gen diff=a01-int(a01)
 gen a01_int=a01-diff
 tab diff
@@ -68,6 +65,115 @@ sort a01
 duplicates report a01
 sum a01
 save hh15.dta, replace
+
+** female labor force participation
+use $BIHS15\008_r2_mod_c_male.dta, clear
+keep if mid==2
+recode c05 (81/999=0 "No") (nonm=1 "Yes"), gen(wrk_wf)
+label var wrk_wf "Current working status of wife"
+
+*** extensive margin: probability of working
+recode c05 (1 6=1 "Yes") (nonm=0 "No"), gen(csw_awrk) //extensive margin
+label var csw_awrk "Casual wage employment (agriculture)"
+recode c05 (2/5 7/11=1 "Yes")(nonm=0 "No"), gen(csw_nawrk)
+label var csw_nawrk "Casual wage employment (non-agriculture)"
+recode c05 (12/21=1 "Yes")(nonm=0 "No"), gen(slr_emp)
+label var slr_emp "Salaried employment"
+recode c05 (22/47=1 "Yes")(nonm=0 "No"), gen(slf_emp)
+label var slf_emp "Self-employment"
+recode c05 (50/57=1 "Yes")(nonm=0 "No"), gen(trdprd_emp)
+label var slf_emp "Trader/production business"
+recode c05 (2/5  7/57=1 "Yes")(nonm=0 "No"), gen(off_emp)
+label var off_emp "Off-farm employment"
+
+foreach labor in csw_awrk csw_nawrk slr_emp slf_emp trdprd_emp off_emp {
+	 bysort a01: egen mx_`labor' = max(`labor')
+	 bysort a01: replace `labor' = mx_`labor'
+	 bysort a01: replace `labor' = 0 if `labor'==.
+	 drop mx_`labor'
+}
+
+*** intensive margin: working hour
+gen csw_ah=c08 if csw_awrk==1 //intensive margin
+replace csw_ah=0 if csw_awrk==0 
+label var csw_ah "Casual wage employment (agriculture)"
+
+gen csw_nah=c08 if csw_nawrk==1 //intensive margin
+replace csw_nah=0 if csw_nawrk==0 
+label var csw_nah "Casual wage employment (non-agriculture)"
+
+gen slr_h=c08 if slr_emp==1 
+replace slr_h=0 if slr_emp==0 
+label var slr_h "Salaried employment"
+
+gen slf_h=c08 if slf_emp==1 
+replace slf_h=0 if slf_emp==0 
+label var slf_h "Self-employment"
+
+gen trdprd_h=c08 if trdprd_emp==1 
+replace trdprd_h=0 if trdprd_emp==0 
+label var trdprd_h "Trader/production business"
+
+gen off_h=c08 if off_emp==1 
+replace off_h=0 if off_emp==0 
+label var off_h "Off-farm employment"
+
+foreach labor in csw_ah csw_nah slr_h slf_h trdprd_h off_h {
+	bysort a01: egen mx_`labor' = total(`labor')
+	bysort a01: replace `labor' = mx_`labor'
+	drop mx_`labor'
+}
+
+*** income of working 
+gen csw_ai=c14 if csw_awrk==1 
+replace csw_ai=0 if csw_awrk==0 
+label var csw_ai "Casual wage employment (agriculture)"
+
+gen csw_nai=c14 if csw_nawrk==1 
+replace csw_nai=0 if csw_nawrk==0 
+label var csw_nai "Casual wage employment (non-agriculture)"
+
+gen slr_i=c14 if slr_emp==1 
+replace slr_i=0 if slr_emp==0 
+label var slr_i "Salaried employment"
+
+gen slf_i=c14 if slf_emp==1 
+replace slf_i=0 if slf_emp==0 
+label var slf_i "Self-employment"
+
+gen trdprd_i=c14 if trdprd_emp==1 
+replace trdprd_i=0 if trdprd_emp==0 
+label var trdprd_i "Trader/production business"
+
+gen off_i=c14 if off_emp==1 
+replace off_i=0 if off_emp==0 
+label var off_i "Off-farm employment"
+
+foreach labor in csw_ai csw_nai slr_i slf_i trdprd_i off_i {
+	bysort a01: egen mx_`labor' = total(`labor')
+	bysort a01: replace `labor' = mx_`labor'
+	drop mx_`labor'
+}
+
+keep a01 csw_awrk csw_nawrk slr_emp slf_emp trdprd_emp off_emp csw_ah csw_nah slr_h slf_h trdprd_h off_h csw_ai csw_nai slr_i slf_i trdprd_i off_i
+
+duplicates drop a01 csw_awrk csw_nawrk slr_emp slf_emp off_emp csw_ah csw_nah slr_h slf_h off_h csw_ai csw_nai slr_i slf_i off_i, force
+gen diff=a01-int(a01)
+gen a01_int=a01-diff
+tab diff
+gen ext=0 if diff==0
+replace ext=1 if diff>0 & diff<.18
+replace ext=2 if diff>.18 & diff<.21
+replace ext=3 if diff>.21 & diff<.31
+replace ext=4 if diff>.31 & diff<.41
+drop if ext>1
+ren a01 a01R2
+ren a01_int a01
+order a01
+sort a01
+duplicates report a01
+sum a01
+save fl15.dta, replace
 
 ** village-level mobile money
 use $BIHS15\003_module_cb_community, clear
@@ -387,7 +493,7 @@ label var age_hh "Age of HH"
 label var schll_hh "Schooling year of HH"
 recode gender_hh (1=1 "Man")(2=0 "Woman"), gen(Male)
 label var Male "Male(=1)"
-recode b1_10 (1=72 "Yes")(nonm=0 "No"), gen(wrk_hs)
+recode b1_10 (1/72=1 "Yes")(nonm=0 "No"), gen(wrk_hs)
 label var wrk_hs "Current working status of husband"
 
 gen diff=a01-int(a01)
@@ -413,12 +519,12 @@ use $BIHS15\010_r2_mod_d1_male, clear
 keep a01 d1_02 d1_03
 drop if d1_02==24
 tab d1_02, gen(a)
-local varlist "a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16 a17 a18 a19 a20 a21 a22 a23 a24 a25 a26 a27 a28 a29 a30 a31 a32 a33 a34 a35 a36 a37 a38 a39 a40 a41 a42 a43 a44 a45 a46 a47 a48 a49 a50 a51 a52 a53 a54 a55 a56"
+local varlist "a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16 a17 a18 a19 a20 a21 a22 a23  a25 a26 a27 a28 a29 a30 a31 a32 a33 a34 a35 a36 a37 a38 a39 a40 a41 a42 a43 a44 a45 a46 a47 a48 a49 a50 a51 a52 a53 a54 a55 a56" //a24 mobile phone
 sort a01 d1_02
 foreach x in `varlist'{
 	bysort a01: egen s_`x'=sum(`x')
 }
-local varlist "s_a1 s_a2 s_a3 s_a4 s_a5 s_a6 s_a7 s_a8 s_a9 s_a10 s_a11 s_a12 s_a13 s_a14 s_a15 s_a16 s_a17 s_a18 s_a19 s_a20 s_a21 s_a22 s_a23 s_a24 s_a25 s_a26 s_a27 s_a28 s_a29 s_a30 s_a31 s_a32 s_a33 s_a34 s_a35 s_a36 s_a37 s_a38 s_a39 s_a40 s_a41 s_a42 s_a43 s_a44 s_a45 s_a46 s_a47 s_a48 s_a50 s_a49 s_a51 s_a52 s_a53 s_a54 s_a55 s_a56"
+local varlist "s_a1 s_a2 s_a3 s_a4 s_a5 s_a6 s_a7 s_a8 s_a9 s_a10 s_a11 s_a12 s_a13 s_a14 s_a15 s_a16 s_a17 s_a18 s_a19 s_a20 s_a21 s_a22 s_a23  s_a25 s_a26 s_a27 s_a28 s_a29 s_a30 s_a31 s_a32 s_a33 s_a34 s_a35 s_a36 s_a37 s_a38 s_a39 s_a40 s_a41 s_a42 s_a43 s_a44 s_a45 s_a46 s_a47 s_a48 s_a50 s_a49 s_a51 s_a52 s_a53 s_a54 s_a55 s_a56" //s_a24 mobile phone
 pca `varlist'
 predict asset
 keep a01 asset
@@ -443,10 +549,13 @@ save asset15.dta, replace
 
 **keep agronomic variables
 use $BIHS15\014_r2_mod_g_male, clear
-collapse (sum) farmsize=g02 ,by(a01)
+keep if g01==2
+bysort a01: egen farmsize=total(g02) 
 label var farmsize "Farm Size(decimal)"
 gen ln_farm=log(farmsize)
 label var ln_farm "Farm size(log)"
+duplicates drop a01 farmsize, force
+keep a01 farmsize ln_farm
 gen diff=a01-int(a01)
 gen a01_int=a01-diff
 tab diff
@@ -1468,7 +1577,7 @@ merge 1:1 a01 using wcrdt15.dta, nogen
 merge 1:1 a01 using vlnc15.dta, nogen
 merge 1:1 a01 using cntr15.dta, nogen
 merge 1:1 a01 using masst15.dta, nogen
-
+merge 1:1 a01 using fl15.dta, nogen
 merge m:m Village using com15, nogen force
 label var farmsize "Farm Size(decimal)"
 label var ln_farm "Farm size(log)"

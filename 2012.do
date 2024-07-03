@@ -35,11 +35,104 @@ label var age_w "Age of women"
 label var schll_w "Schooling year of women"
 recode b1_07 (4=1 "yes") (nonm=0 "No" ), gen(lit_w)
 label var lit_w "Literacy of women"
-recode b1_10 (1=72 "Yes")(nonm=0 "No"), gen(wrk_wf)
+
+
+keep a01 couple ch_size edu_w schll_w lit_w age_w
+save hh12.dta, replace
+
+** female labor force participation
+use $BIHS12\005_mod_c_male, clear
+keep if mid==2
+recode c05 (81/999=0 "No") (nonm=1 "Yes"), gen(wrk_wf)
 label var wrk_wf "Current working status of wife"
 
-keep a01 couple ch_size edu_w schll_w lit_w age_w wrk_wf
-save hh12.dta, replace
+*** extensive margin: probability of working
+recode c05 (1 6=1 "Yes") (nonm=0 "No"), gen(csw_awrk) //extensive margin
+label var csw_awrk "Casual wage employment (agriculture)"
+recode c05 (2/5 7/11=1 "Yes")(nonm=0 "No"), gen(csw_nawrk)
+label var csw_nawrk "Casual wage employment (non-agriculture)"
+recode c05 (12/21=1 "Yes")(nonm=0 "No"), gen(slr_emp)
+label var slr_emp "Salaried employment"
+recode c05 (22/47=1 "Yes")(nonm=0 "No"), gen(slf_emp)
+label var slf_emp "Self-employment"
+recode c05 (50/57=1 "Yes")(nonm=0 "No"), gen(trdprd_emp)
+label var slf_emp "Trader/production business"
+recode c05 (2/5  7/57=1 "Yes")(nonm=0 "No"), gen(off_emp)
+label var off_emp "Off-farm employment"
+
+foreach labor in csw_awrk csw_nawrk slr_emp slf_emp trdprd_emp off_emp {
+	 bysort a01: egen mx_`labor' = max(`labor')
+	 bysort a01: replace `labor' = mx_`labor'
+	 bysort a01: replace `labor' = 0 if `labor'==.
+	 drop mx_`labor'
+}
+
+*** intensive margin: working hour
+gen csw_ah=c08 if csw_awrk==1 //intensive margin
+replace csw_ah=0 if csw_awrk==0 
+label var csw_ah "Casual wage employment (agriculture)"
+
+gen csw_nah=c08 if csw_nawrk==1 //intensive margin
+replace csw_nah=0 if csw_nawrk==0 
+label var csw_nah "Casual wage employment (non-agriculture)"
+
+gen slr_h=c08 if slr_emp==1 
+replace slr_h=0 if slr_emp==0 
+label var slr_h "Salaried employment"
+
+gen slf_h=c08 if slf_emp==1 
+replace slf_h=0 if slf_emp==0 
+label var slf_h "Self-employment"
+
+gen trdprd_h=c08 if trdprd_emp==1 
+replace trdprd_h=0 if trdprd_emp==0 
+label var trdprd_h "Trader/production business"
+
+gen off_h=c08 if off_emp==1 
+replace off_h=0 if off_emp==0 
+label var off_h "Off-farm employment"
+
+foreach labor in csw_ah csw_nah slr_h slf_h trdprd_h off_h {
+	bysort a01: egen mx_`labor' = total(`labor')
+	bysort a01: replace `labor' = mx_`labor'
+	drop mx_`labor'
+}
+
+*** income of working 
+gen csw_ai=c14 if csw_awrk==1 
+replace csw_ai=0 if csw_awrk==0 
+label var csw_ai "Casual wage employment (agriculture)"
+
+gen csw_nai=c14 if csw_nawrk==1 
+replace csw_nai=0 if csw_nawrk==0 
+label var csw_nai "Casual wage employment (non-agriculture)"
+
+gen slr_i=c14 if slr_emp==1 
+replace slr_i=0 if slr_emp==0 
+label var slr_i "Salaried employment"
+
+gen slf_i=c14 if slf_emp==1 
+replace slf_i=0 if slf_emp==0 
+label var slf_i "Self-employment"
+
+gen trdprd_i=c14 if trdprd_emp==1 
+replace trdprd_i=0 if trdprd_emp==0 
+label var trdprd_i "Trader/production business"
+
+gen off_i=c14 if off_emp==1 
+replace off_i=0 if off_emp==0 
+label var off_i "Off-farm employment"
+
+foreach labor in csw_ai csw_nai slr_i slf_i trdprd_i off_i {
+	bysort a01: egen mx_`labor' = total(`labor')
+	bysort a01: replace `labor' = mx_`labor'
+	drop mx_`labor'
+}
+
+keep a01 csw_awrk csw_nawrk slr_emp slf_emp trdprd_emp off_emp csw_ah csw_nah slr_h slf_h trdprd_h off_h csw_ai csw_nai slr_i slf_i trdprd_i off_i
+
+duplicates drop a01 csw_awrk csw_nawrk slr_emp slf_emp off_emp csw_ah csw_nah slr_h slf_h off_h csw_ai csw_nai slr_i slf_i off_i, force
+save fl12.dta, replace
 
 **mobile phone ownership
 use $BIHS12\006_mod_d1_male, clear //household ownership
@@ -218,7 +311,7 @@ label var age_hh "Age of HH"
 label var schll_hh "Schooling year of HH"
 recode gender_hh (1=1 "Man")(2=0 "Woman"), gen(Male)
 label var Male "Male(=1)"
-recode b1_10 (1=72 "Yes")(nonm=0 "No"), gen(wrk_hs)
+recode b1_10 (1/72=1 "Yes")(nonm=0 "No"), gen(wrk_hs)
 label var wrk_hs "Current working status of husband"
 save sciec12.dta, replace
 
@@ -227,7 +320,7 @@ save sciec12.dta, replace
 use $BIHS12\006_mod_d1_male.dta, clear  
 keep a01 d1_02 d1_03
 reshape wide d1_03,i(a01) j(d1_02)
-local varlist "d1_031 d1_032 d1_033 d1_034 d1_035 d1_036 d1_037 d1_038 d1_039 d1_0310 d1_0311 d1_0312 d1_0313 d1_0314 d1_0315 d1_0316 d1_0317 d1_0318 d1_0319 d1_0320 d1_0321 d1_0322 d1_0323 d1_0326 d1_0327 d1_0328 d1_0329 d1_0330 d1_0331 d1_0332 d1_0333 d1_0334 d1_0335 d1_0336 d1_0337 d1_0338 d1_0339 d1_0340 d1_0341 d1_0342 d1_0343 d1_0344 d1_0345 d1_0346 d1_0347"
+local varlist "d1_031 d1_032 d1_033 d1_034 d1_035 d1_036 d1_037 d1_038 d1_039 d1_0310 d1_0311 d1_0312 d1_0313 d1_0314 d1_0315 d1_0316 d1_0317 d1_0318 d1_0319 d1_0320 d1_0321 d1_0322 d1_0323 d1_0325 d1_0326 d1_0327 d1_0328 d1_0329 d1_0330 d1_0331 d1_0332 d1_0333 d1_0334 d1_0335 d1_0336 d1_0337 d1_0338 d1_0339 d1_0340 d1_0341 d1_0342 d1_0343 d1_0344 d1_0345 d1_0346 d1_0347" //d1_0324 mobile phone set
 foreach x in `varlist'{
 	replace `x'=0 if `x'==2
 	replace `x'=0 if `x'==.
@@ -239,10 +332,13 @@ save asset12.dta, replace
 
 **keep agronomic variables
 use $BIHS12\010_mod_g_male, clear
-collapse (sum) farmsize=g02 ,by(a01)
+keep if g01==2
+bysort a01: egen farmsize=total(g02) 
 label var farmsize "Farm Size(decimal)"
 gen ln_farm=log(farmsize)
 label var ln_farm "Farm size(log)"
+duplicates drop a01 farmsize, force
+keep a01 farmsize ln_farm
 save agrnmic12.dta, replace
 
 /*Irrigation*/
@@ -681,7 +777,7 @@ merge 1:1 a01 using wcrdt12.dta, nogen
 merge 1:1 a01 using vlnc12.dta, nogen
 merge 1:1 a01 using cntr12.dta, nogen
 merge 1:1 a01 using masst12.dta, nogen
-
+merge 1:1 a01 using fl12.dta, nogen
 label var farmsize "Farm Size(decimal)"
 label var ln_farm "Farm size(log)"
 //gen lnoff=log(offrmagr)
