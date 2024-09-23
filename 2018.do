@@ -30,7 +30,7 @@ ren a01_int a01
 order a01
 drop ext diff
 duplicates report a01
-duplicates drop a01, force
+
 save 2018, replace
 
 ** HH composition, HH with husband and wife
@@ -45,9 +45,9 @@ keep if b1_04==2
 keep if b1_03==2 & b1_01==2
 gen couple=1
 rename (b1_02 b1_08) (age_w edu_w)
-recode edu_w(99=0 "Non-schooling") (22=5)(33=9)(66=0 "Non-schooling")(67=0 "Non-schooling")(74=16)(76=.)(99=0 "Non-schooling"), gen(schll_w) // convert  education into schoolling year 
+recode edu_w(10/16 33/75=1)(nonm=0), gen(schll_w) // convert  education into schoolling year 
 label var age_w "Age of women"
-label var schll_w "Schooling year of women"
+label var schll_w "Secondary school certificate of women"
 recode b1_07 (4=1 "yes") (nonm=0 "No" ), gen(lit_w)
 label var lit_w "Literacy of women"
 
@@ -56,22 +56,216 @@ gen diff=a01-int(a01)
 gen a01_int=a01-diff
 tab diff
 gen ext=0 if diff==0
-replace ext=1 if diff>0 & diff<.18
-replace ext=2 if diff>.18 & diff<.21
-replace ext=3 if diff>.21 & diff<.31
-replace ext=4 if diff>.31 & diff<.41
+replace ext=1 if diff>0 & diff<=.11
+replace ext=2 if diff>.11
 drop if ext>1
 ren a01 a01R2
 ren a01_int a01
 order a01
-sort a01
+drop ext diff
 duplicates report a01
-sum a01
+
 save hh18.dta, replace
+
+** individual demography
+use $BIHS18Male\010_bihs_r3_male_mod_b1.dta, clear
+keep if b1_02 > 17 
+keep if b1_02 < 65
+
+rename (b1_01 b1_02 b1_08) (male age_i edu)
+replace male=0 if male==2
+recode edu (10/16 33/75=1)(nonm=0), gen(schll_i) // convert  education into schoolling year 
+label var age_i "Age"
+label var schll_i "Secondary school certificate of women"
+
+keep a01 mid age_i schll_i 
+gen diff=a01-int(a01)
+gen a01_int=a01-diff
+tab diff
+gen ext=0 if diff==0
+replace ext=1 if diff>0 & diff<=.11
+replace ext=2 if diff>.11
+drop if ext>1
+ren a01 a01R2
+ren a01_int a01
+order a01
+drop ext diff
+duplicates report a01
+
+duplicates drop a01 mid age_i schll_i, force
+
+save hh18_i.dta, replace
+
+** individual income
+use $BIHS18Male\012_bihs_r3_male_mod_c.dta, clear
+recode c05 (81/999=0 "No") (nonm=1 "Yes"), gen(wrk)
+label var wrk "Current working status"
+
+*** extensive margin: probability of working
+recode c05 (1 6=1 "Yes") (nonm=0 "No"), gen(csw_awrk) //extensive margin
+label var csw_awrk "Casual wage employment (agriculture)"
+recode c05 (2/5 7/11=1 "Yes")(nonm=0 "No"), gen(csw_nawrk)
+label var csw_nawrk "Casual wage employment (non-agriculture)"
+recode c05 (12/21=1 "Yes")(nonm=0 "No"), gen(slr_emp)
+label var slr_emp "Salaried employment"
+recode c05 (22/47 72=1 "Yes")(nonm=0 "No"), gen(slf_emp)
+label var slf_emp "Self-employment"
+recode c05 (50/57=1 "Yes")(nonm=0 "No"), gen(trdprd_emp)
+label var trdprd_emp "Trader/production business"
+recode c05 (2/5  7/57 72=1 "Yes")(nonm=0 "No"), gen(off_emp)
+label var off_emp "Off-farm employment"
+
+foreach labor in csw_awrk csw_nawrk slr_emp slf_emp trdprd_emp off_emp {
+	 bysort a01 mid: egen mx_`labor' = max(`labor')
+	 bysort a01 mid: replace `labor' = mx_`labor'
+	 bysort a01 mid: replace `labor' = 0 if `labor'==.
+	 drop mx_`labor'
+}
+
+*** intensive margin: working hour
+gen csw_ah=c08 if csw_awrk==1 //intensive margin
+replace csw_ah=0 if csw_awrk==0 
+label var csw_ah "Casual wage employment (agriculture)"
+
+gen csw_nah=c08 if csw_nawrk==1 //intensive margin
+replace csw_nah=0 if csw_nawrk==0 
+label var csw_nah "Casual wage employment (non-agriculture)"
+
+gen slr_h=c08 if slr_emp==1 
+replace slr_h=0 if slr_emp==0 
+label var slr_h "Salaried employment"
+
+gen slf_h=c08 if slf_emp==1 
+replace slf_h=0 if slf_emp==0 
+label var slf_h "Self-employment"
+
+gen trdprd_h=c08 if trdprd_emp==1 
+replace trdprd_h=0 if trdprd_emp==0 
+label var trdprd_h "Trader/production business"
+
+gen off_h=c08 if off_emp==1 
+replace off_h=0 if off_emp==0 
+label var off_h "Off-farm employment"
+
+foreach labor in csw_ah csw_nah slr_h slf_h trdprd_h off_h {
+	bysort a01 mid: egen mx_`labor' = total(`labor')
+	bysort a01 mid: replace `labor' = mx_`labor'
+	drop mx_`labor'
+}
+
+*** income of working 
+gen csw_ai=c14 if csw_awrk==1 
+replace csw_ai=0 if csw_awrk==0 
+label var csw_ai "Casual wage employment (agriculture)"
+
+gen csw_nai=c14 if csw_nawrk==1 
+replace csw_nai=0 if csw_nawrk==0 
+label var csw_nai "Casual wage employment (non-agriculture)"
+
+gen slr_i=c14 if slr_emp==1 
+replace slr_i=0 if slr_emp==0 
+label var slr_i "Salaried employment"
+
+gen slf_i=c14 if slf_emp==1 
+replace slf_i=0 if slf_emp==0 
+label var slf_i "Self-employment"
+
+gen trdprd_i=c14 if trdprd_emp==1 
+replace trdprd_i=0 if trdprd_emp==0 
+label var trdprd_i "Trader/production business"
+
+gen off_i=c14 if off_emp==1 
+replace off_i=0 if off_emp==0 
+label var off_i "Off-farm employment"
+
+foreach labor in csw_ai csw_nai slr_i slf_i trdprd_i off_i {
+	bysort a01 mid: egen mx_`labor' = total(`labor')
+	bysort a01 mid: replace `labor' = mx_`labor'
+	drop mx_`labor'
+}
+
+keep a01 mid wrk csw_awrk csw_nawrk slr_emp slf_emp trdprd_emp off_emp csw_ah csw_nah slr_h slf_h trdprd_h off_h csw_ai csw_nai slr_i slf_i trdprd_i off_i
+
+duplicates drop a01 mid csw_awrk csw_nawrk slr_emp slf_emp off_emp csw_ah csw_nah slr_h slf_h off_h csw_ai csw_nai slr_i slf_i off_i, force
+
+gen diff=a01-int(a01)
+gen a01_int=a01-diff
+tab diff
+gen ext=0 if diff==0
+replace ext=1 if diff>0 & diff<=.11
+replace ext=2 if diff>.11
+drop if ext>1
+ren a01 a01R2
+ren a01_int a01
+order a01
+drop ext diff
+duplicates report a01
+
+rename mid_c mid
+save inc18_i.dta, replace
+
+**individual mobile phone ownership
+use $BIHS18Male\015_bihs_r3_male_mod_d1, clear //individual
+keep if d1_02==24 //only mobile phones
+rename d1_06_a mid
+gen mobile=1 if d1_03==1
+replace mobile=1 if d1_03==1
+drop if d1_03 == .
+replace mobile=0 if mobile==.
+label var mobile "Mobile ownership"
+keep a01 mid mobile
+tempfile m1
+save `m1'
+
+use $BIHS18Male\015_bihs_r3_male_mod_d1, clear 
+keep if d1_02==24 //only mobile phones
+rename d1_06_b mid
+gen mobile=1 if d1_03==1
+replace mobile=1 if d1_03==1
+drop if d1_03 == .
+replace mobile=0 if mobile==.
+label var mobile "Mobile ownership"
+keep a01 mid mobile
+append using `m1'
+
+save m218.dta, replace
+
+use $BIHS18Male\015_bihs_r3_male_mod_d1, clear
+keep if d1_02==24 //only mobile phones
+rename d1_06_c mid
+gen mobile=1 if d1_03==1
+replace mobile=1 if d1_03==1
+drop if d1_03 == .
+replace mobile=0 if mobile==.
+label var mobile "Mobile ownership"
+keep a01 mid mobile
+
+append using m218
+
+bysort a01: egen mob=total(mobile)
+recode mob (0=0 "No")(nonm=1 "Yes" ), gen(m)
+label var m "Mobile ownership"
+
+gen diff=a01-int(a01)
+gen a01_int=a01-diff
+tab diff
+gen ext=0 if diff==0
+replace ext=1 if diff>0 & diff<=.11
+replace ext=2 if diff>.11
+drop if ext>1
+ren a01 a01R2
+ren a01_int a01
+order a01
+drop ext diff
+duplicates report a01
+
+
+duplicates drop a01 mid m, force
+save m18_i, replace
 
 ** female labor force participation
 use $BIHS18Male\012_bihs_r3_male_mod_c.dta, clear
-keep if mid==2
+keep if mid_c==2
 recode c05 (81/999=0 "No") (nonm=1 "Yes"), gen(wrk_wf)
 label var wrk_wf "Current working status of wife"
 
@@ -82,11 +276,11 @@ recode c05 (2/5 7/11=1 "Yes")(nonm=0 "No"), gen(csw_nawrk)
 label var csw_nawrk "Casual wage employment (non-agriculture)"
 recode c05 (12/21=1 "Yes")(nonm=0 "No"), gen(slr_emp)
 label var slr_emp "Salaried employment"
-recode c05 (22/47=1 "Yes")(nonm=0 "No"), gen(slf_emp)
+recode c05 (22/47 72=1 "Yes")(nonm=0 "No"), gen(slf_emp)
 label var slf_emp "Self-employment"
 recode c05 (50/57=1 "Yes")(nonm=0 "No"), gen(trdprd_emp)
-label var slf_emp "Trader/production business"
-recode c05 (2/5  7/57=1 "Yes")(nonm=0 "No"), gen(off_emp)
+label var trdprd_emp "Trader/production business"
+recode c05 (2/5  7/57 72=1 "Yes")(nonm=0 "No"), gen(off_emp)
 label var off_emp "Off-farm employment"
 
 foreach labor in csw_awrk csw_nawrk slr_emp slf_emp trdprd_emp off_emp {
@@ -158,7 +352,7 @@ foreach labor in csw_ai csw_nai slr_i slf_i trdprd_i off_i {
 	drop mx_`labor'
 }
 
-keep a01 csw_awrk csw_nawrk slr_emp slf_emp trdprd_emp off_emp csw_ah csw_nah slr_h slf_h trdprd_h off_h csw_ai csw_nai slr_i slf_i trdprd_i off_i
+keep a01 wrk_wf csw_awrk csw_nawrk slr_emp slf_emp trdprd_emp off_emp csw_ah csw_nah slr_h slf_h trdprd_h off_h csw_ai csw_nai slr_i slf_i trdprd_i off_i
 
 duplicates drop a01 csw_awrk csw_nawrk slr_emp slf_emp off_emp csw_ah csw_nah slr_h slf_h off_h csw_ai csw_nai slr_i slf_i off_i, force
 
@@ -166,18 +360,123 @@ gen diff=a01-int(a01)
 gen a01_int=a01-diff
 tab diff
 gen ext=0 if diff==0
-replace ext=1 if diff>0 & diff<.18
-replace ext=2 if diff>.18 & diff<.21
-replace ext=3 if diff>.21 & diff<.31
-replace ext=4 if diff>.31 & diff<.41
+replace ext=1 if diff>0 & diff<=.11
+replace ext=2 if diff>.11
 drop if ext>1
 ren a01 a01R2
 ren a01_int a01
 order a01
-sort a01
+drop ext diff
 duplicates report a01
-sum a01
+
 save fl18.dta, replace
+
+
+** male labor force participation
+use $BIHS18Male\012_bihs_r3_male_mod_c.dta, clear
+keep if mid_c==1
+
+*** extensive margin: probability of working
+recode c05 (1 6=1 "Yes") (nonm=0 "No"), gen(csw_awrk_m) //extensive margin
+label var csw_awrk "Casual wage employment (agriculture)"
+recode c05 (2/5 7/11=1 "Yes")(nonm=0 "No"), gen(csw_nawrk_m)
+label var csw_nawrk "Casual wage employment (non-agriculture)"
+recode c05 (12/21=1 "Yes")(nonm=0 "No"), gen(slr_emp_m)
+label var slr_emp "Salaried employment"
+recode c05 (22/47 72=1 "Yes")(nonm=0 "No"), gen(slf_emp_m)
+label var slf_emp "Self-employment"
+recode c05 (50/57=1 "Yes")(nonm=0 "No"), gen(trdprd_emp_m)
+label var trdprd_emp "Trader/production business"
+recode c05 (2/5  7/57 72=1 "Yes")(nonm=0 "No"), gen(off_emp_m)
+label var off_emp "Off-farm employment"
+
+foreach labor in csw_awrk_m csw_nawrk_m slr_emp_m slf_emp_m trdprd_emp_m off_emp_m {
+	 bysort a01: egen mx_`labor' = max(`labor')
+	 bysort a01: replace `labor' = mx_`labor'
+	 bysort a01: replace `labor' = 0 if `labor'==.
+	 drop mx_`labor'
+}
+
+*** intensive margin: working hour
+gen csw_ah_m=c08 if csw_awrk_m==1 //intensive margin
+replace csw_ah_m=0 if csw_awrk_m==0 
+label var csw_ah_m "Casual wage employment (agriculture)"
+
+gen csw_nah_m=c08 if csw_nawrk_m==1 //intensive margin
+replace csw_nah_m=0 if csw_nawrk_m==0 
+label var csw_nah_m "Casual wage employment (non-agriculture)"
+
+gen slr_h_m=c08 if slr_emp_m==1 
+replace slr_h_m=0 if slr_emp_m==0 
+label var slr_h_m "Salaried employment"
+
+gen slf_h_m=c08 if slf_emp_m==1 
+replace slf_h_m=0 if slf_emp_m==0 
+label var slf_h_m "Self-employment"
+
+gen trdprd_h_m=c08 if trdprd_emp_m==1 
+replace trdprd_h_m=0 if trdprd_emp_m==0 
+label var trdprd_h_m "Trader/production business"
+
+gen off_h_m=c08 if off_emp_m==1 
+replace off_h_m=0 if off_emp_m==0 
+label var off_h_m "Off-farm employment"
+
+foreach labor in csw_ah_m csw_nah_m slr_h_m slf_h_m trdprd_h_m off_h_m {
+	bysort a01: egen mx_`labor' = total(`labor')
+	bysort a01: replace `labor' = mx_`labor'
+	drop mx_`labor'
+}
+
+*** income of working 
+gen csw_ai_m=c14 if csw_awrk_m==1 
+replace csw_ai_m=0 if csw_awrk_m==0 
+label var csw_ai "Casual wage employment (agriculture)"
+
+gen csw_nai_m=c14 if csw_nawrk_m==1 
+replace csw_nai_m=0 if csw_nawrk_m==0 
+label var csw_nai_m "Casual wage employment (non-agriculture)"
+
+gen slr_i_m=c14 if slr_emp_m==1 
+replace slr_i_m=0 if slr_emp_m==0 
+label var slr_i_m "Salaried employment"
+
+gen slf_i_m=c14 if slf_emp_m==1 
+replace slf_i_m=0 if slf_emp_m==0 
+label var slf_i_m "Self-employment"
+
+gen trdprd_i_m=c14 if trdprd_emp_m==1 
+replace trdprd_i_m=0 if trdprd_emp_m==0 
+label var trdprd_i_m "Trader/production business"
+
+gen off_i_m=c14 if off_emp_m==1 
+replace off_i_m=0 if off_emp_m==0 
+label var off_i_m "Off-farm employment"
+
+foreach labor in csw_ai_m csw_nai_m slr_i_m slf_i_m trdprd_i_m off_i_m {
+	bysort a01: egen mx_`labor' = total(`labor')
+	bysort a01: replace `labor' = mx_`labor'
+	drop mx_`labor'
+}
+
+keep a01 csw_awrk_m csw_nawrk_m slr_emp_m slf_emp_m trdprd_emp_m off_emp_m csw_ah_m csw_nah_m slr_h_m slf_h_m trdprd_h_m off_h_m csw_ai_m csw_nai_m slr_i_m slf_i_m trdprd_i_m off_i_m
+
+duplicates drop a01 csw_awrk_m csw_nawrk_m slr_emp_m slf_emp_m trdprd_emp_m off_emp_m csw_ah_m csw_nah_m slr_h_m slf_h_m trdprd_h_m off_h_m csw_ai_m csw_nai_m slr_i_m slf_i_m trdprd_i_m off_i_m, force
+
+gen diff=a01-int(a01)
+gen a01_int=a01-diff
+tab diff
+gen ext=0 if diff==0
+replace ext=1 if diff>0 & diff<=.11
+replace ext=2 if diff>.11
+drop if ext>1
+ren a01 a01R2
+ren a01_int a01
+order a01
+drop ext diff
+duplicates report a01
+
+save ml18.dta, replace
 
 ** village level mobile agency
 use $BIHS18Community\142_r3_com_mod_cb_1, clear
@@ -193,11 +492,50 @@ save com18, replace
 
 ** mobile phone ownership
 use $BIHS18Male\015_bihs_r3_male_mod_d1, clear //household ownership
-keep if d1_02==24
-recode d1_03 (1=1 "yes")(nonm=0 "no"), gen(mobile)
-rename d1_04 mobile_q
-label var mobile_q "Mobile phone ownership (quantity)"
-keep a01 mobile mobile_q
+keep if d1_02==24 //only mobile phones
+rename d1_06_a mid
+merge 1:1 a01 mid using $BIHS18Male\010_bihs_r3_male_mod_b1, nogen
+gen mobile=1 if mid==1 & d1_03==1
+replace mobile=1 if mid==71 & d1_03==1
+drop if d1_03 == .
+replace mobile=0 if mobile==.
+label var mobile "Men's mobile ownership"
+keep a01 mobile
+tempfile m1
+save `m1'
+
+use $BIHS18Male\015_bihs_r3_male_mod_d1, clear //household ownership
+keep if d1_02==24 //only mobile phones
+rename d1_06_b mid
+merge 1:1 a01 mid using $BIHS18Male\010_bihs_r3_male_mod_b1, nogen
+gen mobile=1 if mid==1 & d1_03==1
+replace mobile=1 if mid==71 & d1_03==1
+drop if d1_03 == .
+replace mobile=0 if mobile==.
+label var mobile "Men's mobile ownership"
+keep a01 mobile
+append using `m1'
+
+save m218.dta, replace
+
+use $BIHS18Male\015_bihs_r3_male_mod_d1, clear //household ownership
+keep if d1_02==24 //only mobile phones
+rename d1_06_c mid
+merge 1:1 a01 mid using $BIHS18Male\010_bihs_r3_male_mod_b1, nogen
+gen mobile=1 if mid==1 & d1_03==1
+replace mobile=1 if mid==71 & d1_03==1
+drop if d1_03 == .
+replace mobile=0 if mobile==.
+label var mobile "Men's mobile ownership"
+keep a01 mobile
+
+append using m218
+
+bysort a01: egen mob=total(mobile)
+recode mob (0=0 "No")(nonm=1 "Yes" ), gen(m)
+label var m "Men's mobile ownership"
+
+duplicates drop a01, force
 gen diff=a01-int(a01)
 gen a01_int=a01-diff
 tab diff
@@ -210,6 +548,9 @@ ren a01_int a01
 order a01
 drop ext diff
 duplicates report a01
+
+duplicates drop a01, force
+
 save mobile18, replace
 
 **Women's mobile phone ownership
@@ -217,7 +558,8 @@ use $BIHS18Male\015_bihs_r3_male_mod_d1, clear
 keep if d1_02==24 //only mobile phones
 rename d1_06_a mid
 merge 1:1 a01 mid using $BIHS18Male\010_bihs_r3_male_mod_b1, nogen
-gen wmobile=1 if b1_01==2 & d1_03==1
+gen wmobile=1 if mid==2 & d1_03==1
+replace wmobile=1 if mid==71 & d1_03==1
 drop if d1_03 == .
 replace wmobile=0 if wmobile==.
 label var wmobile "Women's mobile ownership"
@@ -229,7 +571,8 @@ use $BIHS18Male\015_bihs_r3_male_mod_d1, clear
 keep if d1_02==24 //only mobile phones
 rename d1_06_b mid
 merge 1:1 a01 mid using $BIHS18Male\010_bihs_r3_male_mod_b1, nogen
-gen wmobile=1 if b1_01==2 & d1_03==1
+gen wmobile=1 if mid==2 & d1_03==1
+replace wmobile=1 if mid==71 & d1_03==1
 drop if d1_03 == .
 replace wmobile=0 if wmobile==.
 label var wmobile "Women's mobile ownership"
@@ -242,7 +585,8 @@ use $BIHS18Male\015_bihs_r3_male_mod_d1, clear
 keep if d1_02==24 //only mobile phones
 rename d1_06_c mid
 merge 1:1 a01 mid using $BIHS18Male\010_bihs_r3_male_mod_b1, nogen
-gen wmobile=1 if b1_01==2 & d1_03==1
+gen wmobile=1 if mid==2 & d1_03==1
+replace wmobile=1 if mid==71 & d1_03==1
 drop if d1_03 == .
 replace wmobile=0 if wmobile==.
 label var wmobile "Women's mobile ownership"
@@ -255,7 +599,20 @@ recode wmob (0=0 "No")(nonm=1 "Yes" ), gen(wm)
 label var wm "Women's mobile ownership"
 
 duplicates drop a01, force
+gen diff=a01-int(a01)
+gen a01_int=a01-diff
+tab diff
+gen ext=0 if diff==0
+replace ext=1 if diff>0 & diff<=.11
+replace ext=2 if diff>.11
+drop if ext>1
+ren a01 a01R2
+ren a01_int a01
+order a01
+drop ext diff
+duplicates report a01
 
+duplicates drop a01, force
 save wm18.dta, replace
 
 ** Intimate partner violence
@@ -271,6 +628,19 @@ recode z4_01d1 (1 2=1 "Yes")(nonm=0 "No"), gen(py_vlnc)
 replace py_vlnc=1 if z4_01d2==1 | z4_01d3==1 | z4_01d1==2 | z4_01d2==2 | z4_01d3==2
 label var py_vlnc "Physical violence"
 keep a01 vlnc em_vlnc py_vlnc
+gen diff=a01-int(a01)
+gen a01_int=a01-diff
+tab diff
+gen ext=0 if diff==0
+replace ext=1 if diff>0 & diff<=.11
+replace ext=2 if diff>.11
+drop if ext>1
+ren a01 a01R2
+ren a01_int a01
+order a01
+drop ext diff
+duplicates report a01
+
 save vlnc18.dta, replace
 
 
@@ -284,21 +654,17 @@ gen diff=a01-int(a01)
 gen a01_int=a01-diff
 tab diff
 gen ext=0 if diff==0
-replace ext=1 if diff>0 & diff<.18
-replace ext=2 if diff>.18 & diff<.21
-replace ext=3 if diff>.21 & diff<.31
-replace ext=4 if diff>.31 & diff<.41
+replace ext=1 if diff>0 & diff<=.11
+replace ext=2 if diff>.11
 drop if ext>1
 ren a01 a01R2
 ren a01_int a01
 order a01
-sort a01
+drop ext diff
 duplicates report a01
-sum a01
+
 duplicates drop a01, force
 save cntr18.dta, replace
-
-** income for women
 
 
 ** asset brought to marriage
@@ -312,17 +678,15 @@ gen diff=a01-int(a01)
 gen a01_int=a01-diff
 tab diff
 gen ext=0 if diff==0
-replace ext=1 if diff>0 & diff<.18
-replace ext=2 if diff>.18 & diff<.21
-replace ext=3 if diff>.21 & diff<.31
-replace ext=4 if diff>.31 & diff<.41
+replace ext=1 if diff>0 & diff<=.11
+replace ext=2 if diff>.11
 drop if ext>1
 ren a01 a01R2
 ren a01_int a01
 order a01
-sort a01
+drop ext diff
 duplicates report a01
-sum a01
+
 duplicates drop a01, force
 save masst18.dta, replace
 
@@ -336,17 +700,15 @@ gen diff=a01-int(a01)
 gen a01_int=a01-diff
 tab diff
 gen ext=0 if diff==0
-replace ext=1 if diff>0 & diff<.18
-replace ext=2 if diff>.18 & diff<.21
-replace ext=3 if diff>.21 & diff<.31
-replace ext=4 if diff>.31 & diff<.41
+replace ext=1 if diff>0 & diff<=.11
+replace ext=2 if diff>.11
 drop if ext>1
 ren a01 a01R2
 ren a01_int a01
 order a01
-sort a01
+drop ext diff
 duplicates report a01
-sum a01
+
 duplicates drop a01, force
 save wcrdt18.dta, replace
 
@@ -383,17 +745,15 @@ gen diff=a01-int(a01)
 gen a01_int=a01-diff
 tab diff
 gen ext=0 if diff==0
-replace ext=1 if diff>0 & diff<.18
-replace ext=2 if diff>.18 & diff<.21
-replace ext=3 if diff>.21 & diff<.31
-replace ext=4 if diff>.31 & diff<.41
+replace ext=1 if diff>0 & diff<=.11
+replace ext=2 if diff>.11
 drop if ext>1
 ren a01 a01R2
 ren a01_int a01
 order a01
-sort a01
+drop ext diff
 duplicates report a01
-sum a01
+
 duplicates drop a01, force
 save mm_o18.dta, replace
 
@@ -407,17 +767,15 @@ gen diff=a01-int(a01)
 gen a01_int=a01-diff
 tab diff
 gen ext=0 if diff==0
-replace ext=1 if diff>0 & diff<.18
-replace ext=2 if diff>.18 & diff<.21
-replace ext=3 if diff>.21 & diff<.31
-replace ext=4 if diff>.31 & diff<.41
+replace ext=1 if diff>0 & diff<=.11
+replace ext=2 if diff>.11
 drop if ext>1
 ren a01 a01R2
 ren a01_int a01
 order a01
-sort a01
+drop ext diff
 duplicates report a01
-sum a01
+
 duplicates drop a01, force
 save mm18.dta, replace
 
@@ -439,17 +797,15 @@ gen diff=a01-int(a01)
 gen a01_int=a01-diff
 tab diff
 gen ext=0 if diff==0
-replace ext=1 if diff>0 & diff<.18
-replace ext=2 if diff>.18 & diff<.21
-replace ext=3 if diff>.21 & diff<.31
-replace ext=4 if diff>.31 & diff<.41
+replace ext=1 if diff>0 & diff<=.11
+replace ext=2 if diff>.11
 drop if ext>1
 ren a01 a01R2
 ren a01_int a01
 order a01
-sort a01
+drop ext diff
 duplicates report a01
-sum a01
+
 duplicates drop a01, force
 keep a01 elcex enex gasex nonex dum_el dum_gas
 save ene18, replace
@@ -463,17 +819,15 @@ gen diff=a01-int(a01)
 gen a01_int=a01-diff
 tab diff
 gen ext=0 if diff==0
-replace ext=1 if diff>0 & diff<.18
-replace ext=2 if diff>.18 & diff<.21
-replace ext=3 if diff>.21 & diff<.31
-replace ext=4 if diff>.31 & diff<.41
+replace ext=1 if diff>0 & diff<=.11
+replace ext=2 if diff>.11
 drop if ext>1
 ren a01 a01R2
 ren a01_int a01
 order a01
-sort a01
+drop ext diff
 duplicates report a01
-sum a01
+
 duplicates drop a01, force
 save ckng18, replace
 
@@ -508,9 +862,9 @@ label var ad_size "Number of adult"
 keep if b1_03==1 
 keep a01 mid b1_01 b1_02 b1_04 b1_04a b1_08 b1_10 b1_13a b1_13b hh_size ad_size
 rename (b1_01 b1_02 b1_04 b1_04a b1_08  b1_13a b1_13b)(gender_hh age_hh marital_hh age_marital_hh edu_hh main_earning_1 main_earning_2)
-recode edu_hh(99=0 "Non-schooling") (22=5)(33=9)(66=0 "Non-schooling")(67=0 "Non-schooling")(74=16)(76=.)(99=0 "Non-schooling"), gen(schll_hh) // convert  education into schoolling year 
+recode edu_hh (10/16 33/75=1)(nonm=0), gen(schll_hh) // convert  education into schoolling year 
 label var age_hh "Age of HH"
-label var schll_hh "Schooling year of HH"
+label var schll_hh "Secondary school certificate of HH"
 recode gender_hh (1=1 "Man")(2=0 "Woman"), gen(Male)
 label var Male "Male(=1)"
 recode b1_10 (1/72=1 "Yes")(nonm=0 "No"), gen(wrk_hs)
@@ -543,6 +897,9 @@ foreach x in `varlist'{
 pca `varlist'
 predict asset
 keep a01 asset
+recode asset (min/ -2.38291 =1)(nonm=0), gen(lwlth)
+label var lwlth "Poor asset"
+
 gen diff=a01-int(a01)
 gen a01_int=a01-diff
 tab diff
@@ -658,17 +1015,15 @@ gen diff=a01-int(a01)
 gen a01_int=a01-diff
 tab diff
 gen ext=0 if diff==0
-replace ext=1 if diff>0 & diff<.18
-replace ext=2 if diff>.18 & diff<.21
-replace ext=3 if diff>.21 & diff<.31
-replace ext=4 if diff>.31 & diff<.41
+replace ext=1 if diff>0 & diff<=.11
+replace ext=2 if diff>.11
 drop if ext>1
 ren a01 a01R2
 ren a01_int a01
 order a01
-sort a01
+drop ext diff
 duplicates report a01
-sum a01
+
 keep a01 remi remi_n remi_dom remi_for
 duplicates drop a01, force
 save rem18.dta, replace
@@ -750,17 +1105,15 @@ gen diff=a01-int(a01)
 gen a01_int=a01-diff
 tab diff
 gen ext=0 if diff==0
-replace ext=1 if diff>0 & diff<.18
-replace ext=2 if diff>.18 & diff<.21
-replace ext=3 if diff>.21 & diff<.31
-replace ext=4 if diff>.31 & diff<.41
+replace ext=1 if diff>0 & diff<=.11
+replace ext=2 if diff>.11
 drop if ext>1
 ren a01 a01R2
 ren a01_int a01
 order a01
-sort a01
+drop ext diff
 duplicates report a01
-sum a01
+
 keep a01 sc
 duplicates drop a01, force
 tempfile sc18
@@ -771,17 +1124,15 @@ gen diff=a01-int(a01)
 gen a01_int=a01-diff
 tab diff
 gen ext=0 if diff==0
-replace ext=1 if diff>0 & diff<.18
-replace ext=2 if diff>.18 & diff<.21
-replace ext=3 if diff>.21 & diff<.31
-replace ext=4 if diff>.31 & diff<.41
+replace ext=1 if diff>0 & diff<=.11
+replace ext=2 if diff>.11
 drop if ext>1
 ren a01 a01R2
 ren a01_int a01
 order a01
-sort a01
+drop ext diff
 duplicates report a01
-sum a01
+
 keep a01 ic
 tempfile ic18
 duplicates drop a01, force
@@ -795,17 +1146,15 @@ gen diff=a01-int(a01)
 gen a01_int=a01-diff
 tab diff
 gen ext=0 if diff==0
-replace ext=1 if diff>0 & diff<.18
-replace ext=2 if diff>.18 & diff<.21
-replace ext=3 if diff>.21 & diff<.31
-replace ext=4 if diff>.31 & diff<.41
+replace ext=1 if diff>0 & diff<=.11
+replace ext=2 if diff>.11
 drop if ext>1
 ren a01 a01R2
 ren a01_int a01
 order a01
-sort a01
+drop ext diff
 duplicates report a01
-sum a01
+
 keep a01 mc
 duplicates drop a01, force
 tempfile mc18
@@ -818,17 +1167,15 @@ gen diff=a01-int(a01)
 gen a01_int=a01-diff
 tab diff
 gen ext=0 if diff==0
-replace ext=1 if diff>0 & diff<.18
-replace ext=2 if diff>.18 & diff<.21
-replace ext=3 if diff>.21 & diff<.31
-replace ext=4 if diff>.31 & diff<.41
+replace ext=1 if diff>0 & diff<=.11
+replace ext=2 if diff>.11
 drop if ext>1
 ren a01 a01R2
 ren a01_int a01
 order a01
-sort a01
+drop ext diff
 duplicates report a01
-sum a01
+
 keep a01 lc
 duplicates drop a01, force
 tempfile lc18
@@ -841,17 +1188,15 @@ gen diff=a01-int(a01)
 gen a01_int=a01-diff
 tab diff
 gen ext=0 if diff==0
-replace ext=1 if diff>0 & diff<.18
-replace ext=2 if diff>.18 & diff<.21
-replace ext=3 if diff>.21 & diff<.31
-replace ext=4 if diff>.31 & diff<.41
+replace ext=1 if diff>0 & diff<=.11
+replace ext=2 if diff>.11
 drop if ext>1
 ren a01 a01R2
 ren a01_int a01
 order a01
-sort a01
+drop ext diff
 duplicates report a01
-sum a01
+
 duplicates drop a01, force
 keep a01 plc
 tempfile plc18
@@ -864,17 +1209,15 @@ gen diff=a01-int(a01)
 gen a01_int=a01-diff
 tab diff
 gen ext=0 if diff==0
-replace ext=1 if diff>0 & diff<.18
-replace ext=2 if diff>.18 & diff<.21
-replace ext=3 if diff>.21 & diff<.31
-replace ext=4 if diff>.31 & diff<.41
+replace ext=1 if diff>0 & diff<=.11
+replace ext=2 if diff>.11
 drop if ext>1
 ren a01 a01R2
 ren a01_int a01
 order a01
-sort a01
+drop ext diff
 duplicates report a01
-sum a01
+
 keep a01 lvc
 duplicates drop a01, force
 tempfile lvc18
@@ -886,17 +1229,15 @@ gen diff=a01-int(a01)
 gen a01_int=a01-diff
 tab diff
 gen ext=0 if diff==0
-replace ext=1 if diff>0 & diff<.18
-replace ext=2 if diff>.18 & diff<.21
-replace ext=3 if diff>.21 & diff<.31
-replace ext=4 if diff>.31 & diff<.41
+replace ext=1 if diff>0 & diff<=.11
+replace ext=2 if diff>.11
 drop if ext>1
 ren a01 a01R2
 ren a01_int a01
 order a01
-sort a01
+drop ext diff
 duplicates report a01
-sum a01
+
 keep a01 fc
 duplicates drop a01, force
 tempfile fc18
@@ -957,6 +1298,7 @@ rename s_06 shop
 rename s_04 shop_d
 label var shop "Local shop access (minute)"
 merge 1:1 a01 using facility18, nogen
+
 gen diff=a01-int(a01)
 gen a01_int=a01-diff
 tab diff
@@ -1225,17 +1567,15 @@ gen diff=a01-int(a01)
 gen a01_int=a01-diff
 tab diff
 gen ext=0 if diff==0
-replace ext=1 if diff>0 & diff<.18
-replace ext=2 if diff>.18 & diff<.21
-replace ext=3 if diff>.21 & diff<.31
-replace ext=4 if diff>.31 & diff<.41
+replace ext=1 if diff>0 & diff<=.11
+replace ext=2 if diff>.11
 drop if ext>1
 ren a01 a01R2
 ren a01_int a01
 order a01
-sort a01
+drop ext diff
 duplicates report a01
-sum a01
+
 duplicates drop a01, force
 save edu18, replace
 
@@ -1257,17 +1597,15 @@ gen diff=a01-int(a01)
 gen a01_int=a01-diff
 tab diff
 gen ext=0 if diff==0
-replace ext=1 if diff>0 & diff<.18
-replace ext=2 if diff>.18 & diff<.21
-replace ext=3 if diff>.21 & diff<.31
-replace ext=4 if diff>.31 & diff<.41
+replace ext=1 if diff>0 & diff<=.11
+replace ext=2 if diff>.11
 drop if ext>1
 ren a01 a01R2
 ren a01_int a01
 order a01
-sort a01
+drop ext diff
 duplicates report a01
-sum a01
+
 duplicates drop a01, force
 save hlth18, replace
 
@@ -1283,17 +1621,15 @@ gen diff=a01-int(a01)
 gen a01_int=a01-diff
 tab diff
 gen ext=0 if diff==0
-replace ext=1 if diff>0 & diff<.18
-replace ext=2 if diff>.18 & diff<.21
-replace ext=3 if diff>.21 & diff<.31
-replace ext=4 if diff>.31 & diff<.41
+replace ext=1 if diff>0 & diff<=.11
+replace ext=2 if diff>.11
 drop if ext>1
 ren a01 a01R2
 ren a01_int a01
 order a01
-sort a01
+drop ext diff
 duplicates report a01
-sum a01
+
 duplicates drop a01, force
 save leisure18, replace
 
@@ -1488,6 +1824,7 @@ merge 1:1 a01 using vlnc18.dta, nogen
 merge 1:1 a01 using cntr18.dta, nogen
 merge 1:1 a01 using masst18.dta, nogen
 merge 1:1 a01 using fl18.dta, nogen
+merge 1:1 a01 using ml18.dta, nogen
 merge m:m community_id using com18, nogen force
 
 label var farmsize "Farm Size(decimal)"
@@ -1502,4 +1839,18 @@ egen agcost=rowtotal(sc ic mc lc plc lvc fc), missing
 label var agcost "Agricultural cost"
 drop if couple==.
 save 2018.dta, replace
+
+*** Individual level data for mobile phones
+use hh18_i, clear
+merge 1:1 a01 mid using inc18_i, nogen
+merge 1:1 a01 mid using m18_i, nogen
+drop if age_i==.
+replace mobile=0 if mobile==.
+merge m:1 a01 using 2018, nogen
+
+label var farmsize "Farm Size(decimal)"
+label var ln_farm "Farm size(log)"
+//gen lnoff=log(offrmagr)
+
+save 2018_i.dta, replace
 
