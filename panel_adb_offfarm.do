@@ -335,8 +335,6 @@ drop res1_off_h res1_csw_nah res1_slr_h  res1_slf_h res1_trdprd_h
 */
 
 ** Heterogeneous analysis (IV-FE)
-global res res1_csw_nawrk res2_csw_nawrk res1_slr_emp res2_slr_emp res1_slf_emp res2_slf_emp res1_trdprd_emp res2_trdprd_emp res1_off_emp res2_off_emp res1_off_h res2_off_h res1_csw_nah res2_csw_nah res1_slr_h res2_slr_h res1_slf_h res2_slf_h res1_trdprd_h res2_trdprd_h
-
 ** with age of women
 eststo clear
 eststo: reghdfe off_emp wm  $control res1_ , a(a01 dvcode year) vce(r)
@@ -373,7 +371,7 @@ foreach out of varlist $extensive  off_emp {
  	reghdfe wm wm_union $control, a(a01 year) vce(r) res
 	predict double res1_`out', r
 
-	reghdfe wm_ed wu_ed $control, a(a01　year) vce(r) res
+	reghdfe wm_ed wu_ed $control, a(a01 year) vce(r) res
 	predict double res2_`out', r
 
 	eststo: probit `out' wm wm_ed $control res1_`out' res2_`out' i.dvcode i.year if _est_est1==1, vce(bootstrap)
@@ -381,16 +379,6 @@ foreach out of varlist $extensive  off_emp {
 	margins, dydx(*)
 }
 
-res1_csw_nawrk res2_csw_nawrk res1_slr_emp res2_slr_emp res1_slf_emp res2_slf_emp res1_trdprd_emp res2_trdprd_emp res1_off_emp res2_off_emp res1_off_h res2_off_h res1_csw_nah res2_csw_nah res1_slr_h res2_slr_h res1_slf_h res2_slf_h res1_trdprd_h res2_trdprd_h
-
-probit csw_nawrk wm wm_ed $control res1_`out' res2_`out' i.dvcode i.year if _est_est1==1, vce(bootstrap)
-margins, dydx(*)
-probit slr_emp wm wm_ed $control res1_`out' res2_`out' i.dvcode i.year if _est_est1==1, vce(bootstrap)
-margins, dydx(*)
-probit slf_emp  wm wm_ed $control res1_`out' res2_`out' i.dvcode i.year if _est_est1==1, vce(bootstrap)
-margins, dydx(*)
-probit trdprd_emp wm wm_ed $control res1_`out' res2_`out' i.dvcode i.year if _est_est1==1, vce(bootstrap)
-margins, dydx(*)
 
 foreach out of varlist off_h $intensive {
  	reghdfe wm wm_union $control, a(a01 year) vce(r) res
