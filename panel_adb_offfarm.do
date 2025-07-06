@@ -102,7 +102,7 @@ foreach m in female age_hh hh_size schll_hh farmsize asset road {
 }
 
 ** CRE household mean
-foreach m in  age_w schll_w wrk_wf masst w_crdt hh_size age_hh schll_hh wrk_hs lwlth asset farmsize town {
+foreach m in off_i_m  off_i age_w schll_w wrk_wf masst w_crdt hh_size age_hh schll_hh wrk_hs lwlth asset farmsize town {
 	bysort a01: egen m_`m'= mean(`m')
 }
 
@@ -165,6 +165,93 @@ gen povertyhead=p190hcgcpi/100
 label var povertyhead "Povery headcount (1/0)"
 
 replace off_i_m=0 if off_i_m==.
+
+* create a new IV (categorical and neighboring IV)
+*-------------------------------------------------------------------------------
+* ステップ1: 年齢と世帯サイズを5つのカテゴリーに分類
+*-------------------------------------------------------------------------------
+
+* 年齢のカテゴリ化 (age_cat)
+* 適切なカテゴリの閾値はデータ分布に応じて調整してください
+sort year age_w // まず year でソートし、次に age_w でソートします
+
+// 各 year グループ内で年齢の順位を計算
+bysort year: egen age_rank = rank(age_w)
+
+// 各 year グループ内の観測値の総数をカウント
+bysort year: egen age_total_obs = count(age_w)
+
+// 順位に基づいて5つのカテゴリを割り当てる
+gen age_cat = ceil(age_rank / (age_total_obs / 5))
+
+// カテゴリが6以上になる可能性のある端数を処理して、最大値を5に制限
+replace age_cat = 5 if age_cat > 5
+
+// 不要な一時変数を削除
+drop age_rank age_total_obs
+
+* 世帯サイズのカテゴリ化 (hh_size_cat)
+sort year hh_size // まず year でソートし、次に hh_size でソートします
+
+// 各 year グループ内で世帯サイズの順位を計算
+bysort year: egen hh_size_rank = rank(hh_size)
+
+// 各 year グループ内の観測値の総数をカウント
+bysort year: egen hh_size_total_obs = count(hh_size)
+
+// 順位に基づいて5つのカテゴリを割り当てる
+gen hh_size_cat = ceil(hh_size_rank / (hh_size_total_obs / 5))
+
+// カテゴリが6以上になる可能性のある端数を処理して、最大値を5に制限
+replace hh_size_cat = 5 if hh_size_cat > 5
+
+// 不要な一時変数を削除
+drop hh_size_rank hh_size_total_obs
+
+*-------------------------------------------------------------------------------
+*ステップ2: 25の複合カテゴリーの作成
+*-------------------------------------------------------------------------------
+sort year age_cat hh_size_cat // まず、複合カテゴリ作成のためにソート
+
+// 各yearグループ内で、age_catとhh_size_catの組み合わせごとに新しいカテゴリ変数を作成
+egen age_hh_size_cat = group(age_cat hh_size_cat) if year==2012
+egen age_hh_size_cat2 = group(age_cat hh_size_cat) if year==2015
+egen age_hh_size_cat3 = group(age_cat hh_size_cat) if year==2018
+replace age_hh_size_cat=age_hh_size_cat2 if year==2015
+replace age_hh_size_cat=age_hh_size_cat3 if year==2018
+drop age_hh_size_cat2 age_hh_size_cat3
+
+// 結果を確認
+tabulate age_hh_size_cat year
+
+*-------------------------------------------------------------------------------
+*ステップ3: IV (Peer Mobile Phone Ownership Rate) の計算
+*-------------------------------------------------------------------------------
+
+* 各 survey_id, age_hh_size_cat グループ内で、village_id が異なる個体の mobile_owner の平均を計算します。
+* 処理を高速化するため、事前にデータをソートすることを推奨します。
+sort a01 age_hh_size_cat uncode year
+
+* 各観察値に対して、対応するピアグループの携帯電話所有率を計算するループ処理
+* 大規模データの場合、このループは時間がかかる可能性があります。
+
+gen iv_new = .
+
+* 年別unionにおける同カテゴリの携帯電話所持数、全国の同カテゴリの携帯電話所持数
+bysort age_hh_size_cat uncode year: egen un_mobile_sum = sum(wm) //所有人数
+bysort age_hh_size_cat uncode year: egen un_total_members = count(a01) //union人数
+bysort age_hh_size_cat year: egen total_owners = sum(wm) //全体所有人数
+bysort age_hh_size_cat year: egen total_members = count(a01) //全体人数
+
+* 各個人のIVを計算 (自身の村を除外した平均)
+* (カテゴリ全体の合計 - 自身の村の合計) / (カテゴリ全体の人数 - 自身の村の人数)
+gen mob_own = total_owners - un_mobile_sum //(カテゴリ全体の合計 - 自身の村の合計)
+gen sum_mob = total_members - un_total_members // (カテゴリ全体の人数 - 自身の村の人数)
+
+* IVの計算 (ゼロ除算を防ぐため、分母が0でないことを確認)
+replace iv_new = mob_own / sum_mob
+
+label var iv_new "Alternative IV"
 save panel_adb.dta, replace
 
 *Descriptive statistics
@@ -200,20 +287,24 @@ legend(label(1 "Off-farm employment") ///
 graph export $graph/offfarm_in.jpg, replace
 
 bysort year: sum off_emp csw_nawrk slr_emp slf_emp off_h csw_nah slr_h slf_h if _est_est1==1
+
 sum off_emp off_i off_i m age_w schll_w masst w_crdt ch_size age_hh schll_hh wrk_hs farmsize lwlth town wm_union m_union if _est_est1==1
+
 bysort wm: su off_i off_i_m m age_w schll_w masst w_crdt ch_size age_hh schll_hh wrk_hs farmsize lwlth town wm_union m_union if _est_est1==1
 
 foreach test in off_i off_i_m m age_w schll_w masst w_crdt ch_size age_hh schll_hh wrk_hs farmsize lwlth town wm_union m_union {
 	ttest `test' if _est_est1==1, by(wm)
 }
 
-*the association between women's mobile phone ownership and women empowerment
+bysort m year: su off_i_m if _est_est1==1
+bysort wm year: su off_i if _est_est1==1
+
+*the association between WMP and income, w/heterogeneity for women
 use panel_adb, clear
 
-global control  age_w schll_w masst w_crdt hh_size age_hh schll_hh wrk_hs lwlth farmsize town m_age_w m_schll_w m_masst m_w_crdt m_hh_size m_age_hh m_schll_hh m_wrk_hs m_lwlth m_farmsize m_town
+global control off_i_m age_w schll_w masst w_crdt hh_size age_hh schll_hh  lwlth farmsize town m_age_w m_schll_w m_masst m_w_crdt m_hh_size m_age_hh m_schll_hh m_off_i_m  m_lwlth m_farmsize m_town //wrk_hs m_wrk_hs
 
 
-*the association between WMP and income, w/heterogeneity
 eststo clear
 
 reghdfe wm wm_union $control, a(a01 year) vce(r) res
@@ -249,7 +340,7 @@ predict double res2_age, r
 
 eststo: bootstrap: xttobit off_i wm wm_age $control res1_age res2_age i.dvcode i.year if _est_est1==1
 
-reghdfe wm wm_union $control, a(a01 dvcode year) vce(r) res
+reghdfe wm wm_union $control, a(a01 uncode year) vce(r) res
 predict double res1_ed, r
 
 reghdfe wm_ed wu_ed $control, a(a01 dvcode year) vce(r) res
@@ -268,7 +359,7 @@ eststo: bootstrap: xttobit off_i wm wm_twn $control res1_twn res2_twn i.dvcode i
 reghdfe wm wm_union $control, a(a01 dvcode year) vce(r) res
 predict double res1_wlth, r
 
-reghdfe wm_wlth wu_wlth $control, a(a01 dvcode year) vce(r) res
+reghdfe wm_wlth wu_wlth $control, a(a01 dvode year) vce(r) res
 predict double res2_wlth, r
 
 eststo: bootstrap: xttobit off_i wm wm_wlth $control res1_wlth res2_wlth i.dvcode i.year if _est_est1==1
@@ -276,65 +367,94 @@ eststo: bootstrap: xttobit off_i wm wm_wlth $control res1_wlth res2_wlth i.dvcod
 esttab using $table\main_result.rtf, b(%4.3f) se replace nogaps starlevels(* 0.1 ** 0.05 *** 0.01) label nocons
 drop res1_age res2_age res1_ed res2_ed res1_wlth res2_wlth res1_
 
-*the association between MP and income
-global control1  age_w schll_w wrk_wf masst w_crdt hh_size age_hh schll_hh lwlth farmsize town m_age_w m_schll_w m_wrk_wf  m_masst m_w_crdt m_hh_size m_age_hh m_schll_hh m_lwlth m_farmsize m_town
+**the association between WMP and income, w/heterogeneity for women (another IV)
+use panel_adb, clear
+
+global control off_i_m age_w schll_w masst w_crdt hh_size age_hh schll_hh  lwlth farmsize town m_age_w m_schll_w m_masst m_w_crdt m_hh_size m_age_hh m_schll_hh m_off_i_m  m_lwlth m_farmsize m_town //wrk_hs m_wrk_hs
+
 
 eststo clear
 
-reghdfe m m_union $control1, a(a01 dvcode year) vce(r) res
+reghdfe wm iv_new $control, a(a01 year) vce(r) res
 predict double res1_, r
 
-eststo: reghdfe off_emp_m m  $control1 res1_ , a(a01 dvcode year) vce(r)
+eststo: reghdfe off_emp wm  $control res1_ , a(a01 dvcode year) vce(r)
+
+ivreghdfe off_emp $control (wm=iv_new), a(a01 dvcode year)  //f statistics for weak instrument
+xtset a01 year
+eststo: bootstrap: xttobit off_i wm  $control res1_ i.dvcode i.year if _est_est1==1
+
+gen wm_age=wm*age_w
+gen wu_age=iv_new*age_w
+label var wm_age "WMP # Age of women"
+
+gen wm_ed=wm*schll_w
+gen wu_ed=iv_new*schll_w
+label var wm_ed "WMP # Secondary education of women"
+
+gen wm_wlth=wm*lwlth
+gen wu_wlth=iv_new*lwlth
+label var wm_wlth "WMP # lwlth"
+
+gen wm_twn=wm*town
+gen wu_twn=iv_new*town
+label var wm_twn "WMP # Distance to town"
+
+reghdfe wm iv_new $control, a(a01 dvcode year) vce(r) res
+predict double res1_age, r
+
+reghdfe wm_age wu_age $control, a(a01 dvcode year) vce(r) res
+predict double res2_age, r
+
+eststo: bootstrap: xttobit off_i wm wm_age $control res1_age res2_age i.dvcode i.year if _est_est1==1
+
+reghdfe wm iv_new $control, a(a01 uncode year) vce(r) res
+predict double res1_ed, r
+
+reghdfe wm_ed wu_ed $control, a(a01 dvcode year) vce(r) res
+predict double res2_ed, r
+
+eststo: bootstrap: xttobit off_i wm wm_ed $control res1_ed res2_ed i.dvcode i.year if _est_est1==1
+
+reghdfe wm iv_new $control, a(a01 dvcode year) vce(r) res
+predict double res1_twn, r
+
+reghdfe wm_twn wu_twn $control, a(a01 dvcode year) vce(r) res
+predict double res2_twn, r
+
+eststo: bootstrap: xttobit off_i wm wm_twn $control res1_twn res2_twn i.dvcode i.year if _est_est1==1
+
+reghdfe wm iv_new $control, a(a01 dvcode year) vce(r) res
+predict double res1_wlth, r
+
+reghdfe wm_wlth wu_wlth $control, a(a01 dvode year) vce(r) res
+predict double res2_wlth, r
+
+eststo: bootstrap: xttobit off_i wm wm_wlth $control res1_wlth res2_wlth i.dvcode i.year if _est_est1==1
+
+esttab using $table\main_result_alt.rtf, b(%4.3f) se replace nogaps starlevels(* 0.1 ** 0.05 *** 0.01) label nocons
+drop res1_age res2_age res1_ed res2_ed res1_wlth res2_wlth res1_
+
+*the association between MP and income for men
+global control1 off_i age_w schll_w masst w_crdt hh_size age_hh schll_hh lwlth farmsize town m_age_w m_schll_w  m_masst m_w_crdt m_hh_size m_age_hh m_schll_hh  m_lwlth m_farmsize m_town m_off_i
+
+
+eststo clear
+
+reghdfe m m_union $control1, a(a01 year) vce(r) res
+predict double res1_, r
+
+eststo: reghdfe off_emp_m m  $control1 res1_ , a(a01 year) vce(r)
 
 xtset a01 year
 eststo: bootstrap: xttobit off_i_m m  $control1 res1_ i.dvcode i.year if _est_est1==1
 esttab using $table\main_result_men.rtf, b(%4.3f) se replace nogaps starlevels(* 0.1 ** 0.05 *** 0.01) label nocons
 drop res1_
 
-** Extensive margin: the association between women's mobile phone ownership and off-farm employment 
-eststo clear
-global extensive csw_nawrk slr_emp slf_emp trdprd_emp
-
-** Panel FE
-foreach out of varlist off_emp $extensive {
- 	reghdfe `out' wm $control, a(a01 dvcode year) vce(r)
-}
-
-** IV-FE
-foreach out of varlist off_emp $extensive {
- 	reghdfe wm wm_union $control, a(a01 dvcode year) vce(r) res
-	predict double res1_`out', r
-
- 	eststo: bootstrap: reghdfe `out' wm  $control res1_`out' , a(a01 dvcode year) vce(r)
-	estimates store `out'
-}
-
-esttab using $table\main_result_extensive.rtf, b(%4.3f) se replace nogaps starlevels(* 0.1 ** 0.05 *** 0.01) label nocons
-drop res1_csw_nawrk res1_slr_emp res1_slf_emp  res1_off_emp res1_trdprd_emp
-
-/*Intensive margin: the association between women's mobile phone ownership and off-farm employment 
-
-eststo clear
-global intensive csw_nah slr_h slf_h trdprd_h
-
-** Panel FE
-foreach out of varlist off_h $intensive {
- 	reghdfe `out' wm $control, a(a01 dvcode year) vce(r)
-}
-
-foreach out of varlist off_h $intensive {
- 	reghdfe wm wm_union $control, a(a01 dvcode year) vce(r) res
-	predict double res1_`out', r
-
- 	eststo: bootstrap: reghdfe `out' wm  $control res1_`out' , a(a01 dvcode year) vce(r)
-	estimates store `out'
-}
-
-esttab using $table\main_result_intensive.rtf, b(%4.3f) se replace nogaps starlevels(* 0.1 ** 0.05 *** 0.01) label nocons
-drop res1_off_h res1_csw_nah res1_slr_h  res1_slf_h res1_trdprd_h
-*/
 
 ** Heterogeneous analysis (IV-FE)
+global extensive csw_nawrk slr_emp slf_emp trdprd_emp
+
 ** with age of women
 eststo clear
 eststo: reghdfe off_emp wm  $control res1_ , a(a01 dvcode year) vce(r)
@@ -350,24 +470,15 @@ foreach out of varlist off_emp $extensive {
 	estimates store `out'
 }
 
-foreach out of varlist off_h $intensive {
- 	reghdfe wm wm_union $control, a(a01 dvcode year) vce(r) res
-	predict double res1_`out', r
 
-	reghdfe wm_age wu_age $control, a(a01 dvcode year) vce(r) res
-	predict double res2_`out', r
-	
- 	eststo: bootstrap: reghdfe `out' wm wm_age $control res1_`out' res2_`out', a(a01 dvcode year) vce(r)
-	estimates store `out'
-}
 esttab using $table\hetero_age.rtf, b(%4.3f) se replace nogaps starlevels(* 0.1 ** 0.05 *** 0.01) label nocons 
-drop res1_csw_nawrk res2_csw_nawrk res1_slr_emp res2_slr_emp res1_slf_emp res2_slf_emp res1_trdprd_emp res2_trdprd_emp res1_off_emp res2_off_emp res1_off_h res2_off_h res1_csw_nah res2_csw_nah res1_slr_h res2_slr_h res1_slf_h res2_slf_h res1_trdprd_h res2_trdprd_h
+drop res1_csw_nawrk res2_csw_nawrk res1_slr_emp res2_slr_emp res1_slf_emp res2_slf_emp res1_trdprd_emp res2_trdprd_emp res1_off_emp res2_off_emp 
 
 ** with education level of women
 eststo clear
 eststo: reghdfe off_emp wm  $control res1_ , a(a01 year) vce(r)
 
-foreach out of varlist $extensive  off_emp {
+foreach out of varlist off_emp  $extensive  {
  	reghdfe wm wm_union $control, a(a01 year) vce(r) res
 	predict double res1_`out', r
 
@@ -380,51 +491,8 @@ foreach out of varlist $extensive  off_emp {
 }
 
 
-foreach out of varlist off_h $intensive {
- 	reghdfe wm wm_union $control, a(a01 year) vce(r) res
-	predict double res1_`out', r
-
-	reghdfe wm_ed wu_ed $control, a(a01 year) vce(r) res
-	predict double res2_`out', r
-
- 	eststo: bootstrap: reghdfe `out' wm wm_ed $control res1_`out' res2_`out', a(a01 dvcode year) vce(r)
-	estimates store `out'
-}
-
 esttab using $table\hetero_edu.rtf, b(%4.3f) se replace nogaps starlevels(* 0.1 ** 0.05 *** 0.01) label nocons 
-drop res1_csw_nawrk res2_csw_nawrk res1_slr_emp res2_slr_emp res1_slf_emp res2_slf_emp res1_trdprd_emp res2_trdprd_emp res1_off_emp res2_off_emp //res1_off_h res2_off_h res1_csw_nah res2_csw_nah res1_slr_h res2_slr_h res1_slf_h res2_slf_h res1_trdprd_h res2_trdprd_h
-
-
-** with distance to town
-eststo clear
-eststo: reghdfe off_emp wm  $control res1_ , a(a01 dvcode year) vce(r)
-
-foreach out of varlist off_emp $extensive {
- 	reghdfe wm wm_union $control, a(a01 year) vce(r) res
-	predict double res1_`out', r
-
-	reghdfe wm_tw wu_tw $control, a(a01 year) vce(r) res
-	predict double res2_`out', r
-
-	eststo: probit `out' wm wm_tw $control res1_`out' res2_`out' i.dvcode i.year if _est_est1==1, vce(bootstrap)
-	estimates store `out'
-}
-
-
-foreach out of varlist off_h $intensive {
- 	reghdfe wm wm_union $control, a(a01 dvcode year) vce(r) res
-	predict double res1_`out', r
-
-	reghdfe wm_tw wu_tw $control, a(a01 dvcode year) vce(r) res
-	predict double res2_`out', r
-
- 	eststo: reghdfe `out' wm wm_tw $control res1_`out' res2_`out', a(a01 dvcode year) vce(r)
-	estimates store `out'
-}
-
-esttab using $table\hetero_tw.rtf, b(%4.3f) se replace nogaps starlevels(* 0.1 ** 0.05 *** 0.01) label nocons 
-drop res1_csw_nawrk res2_csw_nawrk res1_slr_emp res2_slr_emp res1_slf_emp res2_slf_emp res1_trdprd_emp res2_trdprd_emp res1_off_emp res2_off_emp res1_off_h res2_off_h res1_csw_nah res2_csw_nah res1_slr_h res2_slr_h res1_slf_h res2_slf_h res1_trdprd_h res2_trdprd_h
-
+drop res1_csw_nawrk res2_csw_nawrk res1_slr_emp res2_slr_emp res1_slf_emp res2_slf_emp res1_trdprd_emp res2_trdprd_emp res1_off_emp res2_off_emp 
 
 ** with household wealth
 eststo clear
@@ -443,20 +511,28 @@ foreach out of varlist off_emp $extensive {
 }
 
 
-foreach out of varlist off_h $intensive {
- 	reghdfe wm wm_union $control, a(a01 dvcode year) vce(r) res
+esttab using $table\hetero_wlth.rtf, b(%4.3f) se replace nogaps starlevels(* 0.1 ** 0.05 *** 0.01) label nocons 
+drop res1_csw_nawrk res2_csw_nawrk res1_slr_emp res2_slr_emp res1_slf_emp res2_slf_emp res1_trdprd_emp res2_trdprd_emp res1_off_emp res2_off_emp 
+
+
+** with distance to town
+eststo clear
+eststo: reghdfe off_emp wm  $control res1_ , a(a01 dvcode year) vce(r)
+
+foreach out of varlist off_emp $extensive {
+ 	reghdfe wm wm_union $control, a(a01 year) vce(r) res
 	predict double res1_`out', r
 
-	reghdfe wm_wlth wu_wlth $control, a(a01 dvcode year) vce(r) res
+	reghdfe wm_tw wu_tw $control, a(a01 year) vce(r) res
 	predict double res2_`out', r
 
- 	eststo: bootstrap: reghdfe `out' wm wm_wlth $control res1_`out' res2_`out', a(a01 year) vce(r)
+	eststo: probit `out' wm wm_tw $control res1_`out' res2_`out' i.dvcode i.year if _est_est1==1, vce(bootstrap)
 	estimates store `out'
 }
 
-esttab using $table\hetero_wlth.rtf, b(%4.3f) se replace nogaps starlevels(* 0.1 ** 0.05 *** 0.01) label nocons 
-drop res1_csw_nawrk res2_csw_nawrk res1_slr_emp res2_slr_emp res1_slf_emp res2_slf_emp res1_trdprd_emp res2_trdprd_emp res1_off_emp res2_off_emp res1_off_h res2_off_h res1_csw_nah res2_csw_nah res1_slr_h res2_slr_h res1_slf_h res2_slf_h res1_trdprd_h res2_trdprd_h
 
+esttab using $table\hetero_tw.rtf, b(%4.3f) se replace nogaps starlevels(* 0.1 ** 0.05 *** 0.01) label nocons 
+drop res1_csw_nawrk res2_csw_nawrk res1_slr_emp res2_slr_emp res1_slf_emp res2_slf_emp res1_trdprd_emp res2_trdprd_emp res1_off_emp res2_off_emp
 
 ** falsification test
 eststo clear
@@ -520,6 +596,13 @@ bysort mobile: su off_i if _est_est2==1
 esttab using $table\robust_i.rtf, b(%4.3f) se replace nogaps starlevels(* 0.1 ** 0.05 *** 0.01) label nocons 
 
 global control age_i schll_i mrrd_i m_age_i m_schll_i m_mrrd_i
+
+
+eststo clear
+gen m_mrrd=mobile*mrrd_i
+label var m_mrrd "WMP # Married"
+eststo: reghdfe off_i mobile m_mrrd age_i schll_i mrrd_i if male==0, absorb(id year) vce(cluster a01)
+esttab using $table\robust_mar_i.rtf, b(%4.3f) se replace nogaps starlevels(* 0.1 ** 0.05 *** 0.01) label nocons 
 
 *the association between WMP and income, w/heterogeneity (IV-Probit)
 eststo clear

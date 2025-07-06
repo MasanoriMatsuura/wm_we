@@ -18,8 +18,8 @@ rename (div vcode_n)(dvcode Village)
 save 2012, replace
 
 ** HH composition, HH with husband and wife
-use $BIHS12\003_mod_b1_male.dta, cl
-bysort a01: egen size=count(a01) if b1_03==3ear
+use $BIHS12\003_mod_b1_male.dta, clear
+bysort a01: egen size=count(a01) if b1_03==3
 bysort a01: egen ch_size=max(size)
 replace ch_size=0 if ch_size==.
 label var ch_size "Number of children"
@@ -41,16 +41,18 @@ save hh12.dta, replace
 
 ** individual demography
 use $BIHS12\003_mod_b1_male.dta, clear
-keep if b1_02 > 17 
+keep if b1_02 > 16 
 keep if b1_02 < 65
 
-rename (b1_01 b1_02 b1_08) (male age_i edu)
+rename (b1_01 b1_02 b1_04 b1_08) (male age_i mrrd edu)
 replace male=0 if male==2
-recode edu (10/16 33/75=1)(nonm=0), gen(schll_i) // convert  education into schoolling year 
+recode edu (10/16 33/75=1)(nonm=0), gen(schll_i) // convert  education into SSC
 label var age_i "Age"
-label var schll_i "Secondary school certificate of women"
+label var schll_i "Secondary school certificate"
 
-keep a01 mid age_i schll_i 
+recode mrrd (2=1)(nonm=0), gen(mrrd_i)
+label var mrrd_i "Married"
+keep a01 mid male age_i schll_i mrrd_i
 save hh12_i.dta, replace
 
 ** individual income
@@ -428,13 +430,13 @@ label var m "Men's mobile ownership"
 duplicates drop a01, force
 save mobile12, replace
 
-**Women's mobile phone ownership
+
+/**Women's mobile phone ownership
 use $BIHS12\006_mod_d1_male, clear 
 keep if d1_02==24 //only mobile phones
 rename d1_06_a mid
 merge 1:1 a01 mid using $BIHS12\003_mod_b1_male, nogen
-gen wmobile=1 if mid==2 & d1_03==1
-replace wmobile=1 if mid==71 & d1_03==1
+gen wmobile=1 if mid==2
 drop if d1_03 == .
 replace wmobile=0 if wmobile==.
 label var wmobile "Women's mobile ownership"
@@ -446,8 +448,7 @@ use  $BIHS12\006_mod_d1_male, clear
 keep if d1_02==24 //only mobile phones
 rename d1_06_b mid
 merge 1:1 a01 mid using $BIHS12\003_mod_b1_male, nogen
-gen wmobile=1 if mid==2 & d1_03==1
-replace wmobile=1 if mid==71 & d1_03==1
+gen wmobile=1 if mid==2
 drop if d1_03 == .
 replace wmobile=0 if wmobile==.
 label var wmobile "Women's mobile ownership"
@@ -460,8 +461,7 @@ use  $BIHS12\006_mod_d1_male, clear
 keep if d1_02==24 //only mobile phones
 rename d1_06_c mid
 merge 1:1 a01 mid using $BIHS12\003_mod_b1_male, nogen
-gen wmobile=1 if mid==2 & d1_03==1
-replace wmobile=1 if mid==71 & d1_03==1
+gen wmobile=1 if mid==2
 drop if d1_03 == .
 replace wmobile=0 if wmobile==.
 label var wmobile "Women's mobile ownership"
@@ -473,8 +473,15 @@ bysort a01: egen wmob=total(wmobile)
 recode wmob (0=0 "No")(nonm=1 "Yes" ), gen(wm)
 label var wm "Women's mobile ownership"
 
-duplicates drop a01, force
+duplicates drop a01, force*/
 
+*Women's mobile phone ownership
+use $BIHS12\006_mod_d1_male, clear 
+keep if d1_02==24 //only mobile phones
+keep if d1_06_a==2 | d1_06_b==2 | d1_06_c==2
+gen wm=1
+label var wm "Women's mobile ownership"
+keep a01 wm
 save wm12.dta, replace
 
 ** Intimate partner violence
@@ -1073,6 +1080,78 @@ label var ln_farm "Farm size(log)"
 gen year=2012
 replace crpdivnm=0 if crpdivnm==.
 drop if couple==.
+replace wm=0 if wm==.
+
+
+** Instrumental variable 
+* データセットの読み込み、またはサンプルデータの作成
+* 実際のデータに合わせて、以下の部分は調整してください。
+
+*-------------------------------------------------------------------------------
+* ステップ1: 年齢と世帯サイズを5つのカテゴリーに分類
+*-------------------------------------------------------------------------------
+
+* 年齢のカテゴリ化 (age_cat)
+* 適切なカテゴリの閾値はデータ分布に応じて調整してください
+xtile age_cat = age_w, nq(5) // 年齢を5つの等しいグループに分割
+
+* 世帯サイズのカテゴリ化 (hh_size_cat)
+* 世帯サイズがすでに離散的なカテゴリ変数であれば、`xtile`の代わりに`egen group()`などを使うか、そのまま利用することも検討できます。
+* 例えば、`recode hh_size (1=1) (2-3=2) (4-5=3) (6-7=4) (8/max=5), gen(hh_size_cat)` のように具体的な区切りでカテゴリ化することも可能です。
+xtile hh_size_cat = hh_size, nq(5) // 世帯サイズを5つの等しいグループに分割
+
+* 結果を確認
+tabulate age_cat
+tabulate hh_size_cat
+
+*-------------------------------------------------------------------------------
+*ステップ2: 25の複合カテゴリーの作成
+*-------------------------------------------------------------------------------
+
+* 年齢カテゴリと世帯サイズカテゴリの組み合わせで新しいカテゴリ変数 (age_hh_size_cat) を作成
+* この変数には1から25までの値が割り振られます。
+egen age_hh_size_cat = group(age_cat hh_size_cat)
+
+* 結果を確認
+tabulate age_hh_size_cat, missing // 25のカテゴリが生成されたことを確認
+
+*-------------------------------------------------------------------------------
+*ステップ3: IV (Peer Mobile Phone Ownership Rate) の計算
+*-------------------------------------------------------------------------------
+
+* 各 survey_id, age_hh_size_cat グループ内で、village_id が異なる個体の mobile_owner の平均を計算します。
+* 処理を高速化するため、事前にデータをソートすることを推奨します。
+sort a01 age_hh_size_cat uncode
+
+* 各観察値に対して、対応するピアグループの携帯電話所有率を計算するループ処理
+* 大規模データの場合、このループは時間がかかる可能性があります。
+
+gen iv_peer_mobile_ownership = .
+
+preserve // 既存のデータを一時的に保存
+
+* 各調査、各年齢・世帯サイズカテゴリー、各村ごとの携帯電話所有率を計算
+bysort a01 age_hh_size_cat uncode: egen un_mobile_avg = mean(wm) //所有率
+bysort a01 age_hh_size_cat uncode: egen un_mobile_sum = sum(wm) //所有人数
+bysort a01 age_hh_size_cat uncode: egen un_total_members = count(wm) //union人数
+
+* 各個人のIVを計算 (自身の村を除外した平均)
+* (カテゴリ全体の合計 - 自身の村の合計) / (カテゴリ全体の人数 - 自身の村の人数)
+gen mob_sum_excl_own_vil = category_mobile_owner_sum - (union_mobile_owner_avg * _N) // _Nはbysort group内の要素数
+gen sum_mob_excl_vil = category_total_members - _N // _Nはbysort group内の要素数
+
+* IVの計算 (ゼロ除算を防ぐため、分母が0でないことを確認)
+replace iv_peer_mobile_ownership = ///
+    sum_mob_excl_vil / sum_mob_excl_vil ///
+    if sum_mob_excl_vil > 0
+
+
+* 結果の確認
+summarize iv_peer_mobile_ownership
+list survey_id age_cat hh_size_cat age_hh_size_cat village_id mobile_owner iv_peer_mobile_ownership in 1/20
+
+save
+** Save the dataset
 save 2012.dta, replace
 
 
@@ -1087,7 +1166,5 @@ merge m:1 a01 using 2012, nogen
 label var farmsize "Farm Size(decimal)"
 label var ln_farm "Farm size(log)"
 //gen lnoff=log(offrmagr)
-gen year=2012
-replace crpdivnm=0 if crpdivnm==.
-drop if couple==.
+
 save 2012_i.dta, replace

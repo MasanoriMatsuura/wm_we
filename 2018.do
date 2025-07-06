@@ -69,16 +69,19 @@ save hh18.dta, replace
 
 ** individual demography
 use $BIHS18Male\010_bihs_r3_male_mod_b1.dta, clear
-keep if b1_02 > 17 
+keep if b1_02 > 16 
 keep if b1_02 < 65
 
-rename (b1_01 b1_02 b1_08) (male age_i edu)
+rename (b1_01 b1_02 b1_04 b1_08) (male age_i mrrd edu)
 replace male=0 if male==2
-recode edu (10/16 33/75=1)(nonm=0), gen(schll_i) // convert  education into schoolling year 
+recode edu (10/16 33/75=1)(nonm=0), gen(schll_i) // convert  education into SSC
 label var age_i "Age"
-label var schll_i "Secondary school certificate of women"
+label var schll_i "Secondary school certificate"
 
-keep a01 mid age_i schll_i 
+recode mrrd (2=1)(nonm=0), gen(mrrd_i)
+label var mrrd_i "Married"
+keep a01 mid male age_i schll_i mrrd_i
+
 gen diff=a01-int(a01)
 gen a01_int=a01-diff
 tab diff
@@ -553,7 +556,7 @@ duplicates drop a01, force
 
 save mobile18, replace
 
-**Women's mobile phone ownership
+/**Women's mobile phone ownership
 use $BIHS18Male\015_bihs_r3_male_mod_d1, clear 
 keep if d1_02==24 //only mobile phones
 rename d1_06_a mid
@@ -597,8 +600,16 @@ append using wm218
 bysort a01: egen wmob=total(wmobile)
 recode wmob (0=0 "No")(nonm=1 "Yes" ), gen(wm)
 label var wm "Women's mobile ownership"
-
 duplicates drop a01, force
+*/
+
+*Women's mobile phone ownership
+use $BIHS18Male\015_bihs_r3_male_mod_d1, clear 
+keep if d1_02==24 //only mobile phones
+keep if d1_06_a==2 | d1_06_b==2 | d1_06_c==2
+gen wm=1
+label var wm "Women's mobile ownership"
+
 gen diff=a01-int(a01)
 gen a01_int=a01-diff
 tab diff
@@ -611,8 +622,8 @@ ren a01_int a01
 order a01
 drop ext diff
 duplicates report a01
-
 duplicates drop a01, force
+keep a01 wm
 save wm18.dta, replace
 
 ** Intimate partner violence
@@ -1838,6 +1849,8 @@ drop if dvcode==.
 egen agcost=rowtotal(sc ic mc lc plc lvc fc), missing
 label var agcost "Agricultural cost"
 drop if couple==.
+replace wm=0 if wm==.
+
 save 2018.dta, replace
 
 *** Individual level data for mobile phones
